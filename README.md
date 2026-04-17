@@ -4,60 +4,107 @@ A browser UI and REST API for [KubeVirt](https://kubevirt.io/) — drives VMs as
 
 > **Status: M0 skeleton (pre-alpha).** The binary builds, boots against a cluster, and probes for KubeVirt, but every VM operation returns `ErrNotImplemented`. M1+ wires each method against the real KubeVirt API. See [PLAN.md](PLAN.md) for the full milestone breakdown.
 
+## Bare-minimum quickstart on a new machine
+
+This is the shortest path from a clean laptop to "binary running against a local KinD cluster with KubeVirt installed". Four steps; the third one takes 5–10 minutes on first run and the rest are seconds.
+
+### 1. Install the six dependencies
+
+You need `go`, `docker` (Docker Desktop or engine, so KinD has a container runtime to run on), `kind`, `kubectl`, `curl`, and `git`. Nothing else.
+
+**macOS (Homebrew):**
+
+```bash
+brew install go kind kubectl
+# Docker Desktop: https://www.docker.com/products/docker-desktop/
+# (curl and git ship with macOS already.)
+```
+
+**Ubuntu/Debian:**
+
+```bash
+sudo apt update && sudo apt install -y golang-go kubectl curl git docker.io
+# Install kind (no apt package yet):
+curl -Lo /tmp/kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+chmod +x /tmp/kind && sudo mv /tmp/kind /usr/local/bin/kind
+# Let your user run docker without sudo (takes effect on next login):
+sudo usermod -aG docker "$USER"
+```
+
+Verify: `go version`, `docker info`, `kind version`, `kubectl version --client`. The repo's Go build requires **Go 1.26.1** — if `apt` gives you an older version, install from [go.dev/dl](https://go.dev/dl/) instead.
+
+### 2. Clone the repo
+
+```bash
+git clone https://github.com/rootisgod/kubego-webui.git
+cd kubego-webui
+```
+
+### 3. Create a KinD cluster with KubeVirt installed
+
+```bash
+./scripts/kind-up.sh
+```
+
+This creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, patches it into software-emulation mode (KinD nodes have no `/dev/kvm`), installs CDI, and waits for both to become `Available`. Idempotent — re-run it any time. First run takes 5–10 minutes; subsequent runs are seconds.
+
+### 4. Build the binary and run it
+
+```bash
+go build -o kubego ./cmd/server
+./kubego --kubeconfig "$HOME/.kube/config" --port 8080
+```
+
+Open `http://localhost:8080` (login `admin` / `admin`). The UI is still the placeholder — the real verification is in the logs:
+
+```
+level=INFO msg="kubevirt driver ready" source=kubeconfig:... namespace=default server=...
+level=INFO msg="kubevirt detected" group=kubevirt.io version=v1 ...
+```
+
+Or hit the API directly:
+
+```bash
+curl -s localhost:8080/api/v1/version
+```
+
+That's the full bare-minimum path. VM-operation endpoints return an `ErrNotImplemented` error — that is the M0 state; M1+ wires them against real VM CRs. See the [Roadmap](#roadmap) below.
+
+### Tear down
+
+```bash
+# Stop the binary: Ctrl-C in its terminal.
+./scripts/kind-down.sh
+```
+
 ## What is it aimed at?
 
 Any Kubernetes cluster that can run KubeVirt — homelab, on-prem, managed (EKS/AKS/GKE with nested-virt nodes), or a dev KinD cluster. There is no KinD-specific code in the binary; KinD is only the dev/test convenience, and the `scripts/` directory codifies that setup. The deployment target is in-cluster as a pod (Helm chart lands in M0 Slice 3); running standalone against `~/.kube/config` is the supported dev mode.
 
-## End-to-end walkthrough
+## Variants of the quickstart
 
-Three stages: build the binary, point it at a cluster, confirm it's wired. You can do all three against an existing cluster if you have one; otherwise set up a local KinD cluster first.
+### Validate the build without any cluster
 
-### 1. Prerequisites
-
-- Go 1.26.1
-- `kubectl`, `curl`
-- Either: an existing Kubernetes cluster you can reach, **or** [`kind`](https://kind.sigs.k8s.io/docs/user/quick-start/) installed
-- Optional: [`task`](https://taskfile.dev/) — the Taskfile is a thin shortcut over the same shell commands and scripts below. All Taskfile tasks map to plain `go`/`bash`/`kubectl` invocations, so Task is never required.
-
-### 2a. Build and smoke-test without a cluster
-
-The binary will boot against any kubeconfig that parses; the KubeVirt probe logs a warning when the target is unreachable or KubeVirt is missing, but the process keeps running. This is enough to validate your build:
+If you just want to confirm the binary is wired correctly before touching KinD, the smoke test works against any kubeconfig — including an unreachable one. The KubeVirt probe logs a warning; the HTTP server comes up anyway.
 
 ```bash
-# Build
-go build -o kubego ./cmd/server
-# or: task build-backend
-
-# End-to-end smoke test: builds, boots on :18080 using $KUBECONFIG (or
-# ~/.kube/config), hits /version, logs in, confirms VM calls return the
-# stub error, then shuts the binary down. Safe to run against any
-# kubeconfig — real, fake, or unreachable.
 ./scripts/smoke-test.sh
 # or: task smoke
 ```
 
-Expected output ends with `Smoke test passed.` and a captured log line resembling:
+Expected output ends with `Smoke test passed.` and the captured startup log contains one of:
 
 ```
-level=WARN msg="kubevirt probe failed" err="...dial tcp ...: connect: connection refused"
-# or, against a real cluster without KubeVirt:
-level=WARN msg="kubevirt not installed on target cluster — VM operations will return 501 until KubeVirt is installed"
-# or, against a cluster that has it:
-level=INFO msg="kubevirt detected" group=kubevirt.io version=v1 ...
+level=WARN  msg="kubevirt probe failed" err="...dial tcp ...: connect: connection refused"
+level=WARN  msg="kubevirt not installed on target cluster — VM operations will return 501 until KubeVirt is installed"
+level=INFO  msg="kubevirt detected" group=kubevirt.io version=v1 ...
 ```
 
-### 2b. Build a dev KinD cluster and install KubeVirt
+### Point at an existing cluster instead of KinD
 
-The included `scripts/kind-up.sh` creates a `kubego-dev` KinD cluster, installs the KubeVirt operator + CR, patches it into software-emulation mode (KinD nodes have no `/dev/kvm`), installs the Containerized Data Importer (CDI), and waits for both to become Available. The script is idempotent — re-running against an existing cluster just re-applies the manifests.
+Skip step 3. Step 4 works unchanged — the binary only cares that `--kubeconfig` resolves to a reachable API server. Production-grade clusters with real nodes don't need the `useEmulation` patch.
 
-```bash
-./scripts/kind-up.sh
-# or: task kind:up
-```
-
-First run takes 5–10 minutes (KubeVirt virt-operator, virt-api, virt-controller, virt-handler DaemonSet, CDI operator, CDI controllers all need to come up). Subsequent runs are seconds.
-
-Override the defaults if you want:
+### Override KinD defaults
 
 ```bash
 KUBEGO_KIND_CLUSTER=my-cluster \
@@ -66,41 +113,11 @@ CDI_VERSION=v1.59.0 \
 ./scripts/kind-up.sh
 ```
 
-Tear it down with `./scripts/kind-down.sh` (or `task kind:down`).
+### Using Task
 
-> Software emulation is 10–100× slower than KVM. Fine for wiring and integration tests; **do not** run real workloads on this. See PLAN.md §5 for the gory details.
+[`task`](https://taskfile.dev/) is optional — every Taskfile entry maps 1:1 to a shell command you've already seen above. `task kind:up`, `task run`, `task smoke`, `task kind:down` cover the quickstart path.
 
-### 3. Run the binary against the cluster
-
-```bash
-./kubego --kubeconfig "$HOME/.kube/config" --port 8080
-# or: task run
-```
-
-Visit `http://localhost:8080`. The embedded SPA is the placeholder until M0 Slice 3 re-wires it — useful endpoints right now are served via `curl`:
-
-```bash
-# Public
-curl -s localhost:8080/api/v1/version
-
-# Auth then authenticated requests
-curl -sc /tmp/kubego.jar -X POST localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}'
-
-# VM calls return the M0 stub error (HTTP 500 with ErrNotImplemented)
-curl -sb /tmp/kubego.jar localhost:8080/api/v1/vms
-```
-
-Default login is `admin` / `admin`; a config file is created at `~/.passgo-web/config.json` on first run. (The path still carries the upstream name; rename lands in a later milestone.)
-
-### 4. Tear down
-
-```bash
-# Stop the binary: Ctrl-C, or if you backgrounded it, kill its PID.
-./scripts/kind-down.sh
-# or: task kind:down
-```
+> KinD runs KubeVirt in **software emulation** (10–100× slower than KVM, because KinD nodes have no `/dev/kvm`). Fine for wiring and integration tests; don't run real workloads. See PLAN.md §5.
 
 ## What works today (M0)
 
