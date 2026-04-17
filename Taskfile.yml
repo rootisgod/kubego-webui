@@ -11,8 +11,8 @@ vars:
 
 tasks:
   default:
-    desc: Build the project
-    deps: [build]
+    desc: Build the project (backend only — the frontend is still being ported)
+    deps: [build-backend]
 
   # --- Frontend ---
 
@@ -27,7 +27,11 @@ tasks:
       - node_modules/.package-lock.json
 
   frontend-build:
-    desc: Build frontend (produces frontend/dist/)
+    desc: |
+      Build frontend (produces frontend/dist/).
+      Note: the Vue app still calls PassGo's multipass endpoints and will
+      show errors against the current KubeGo backend. Re-wiring lands in
+      M0 Slice 3.
     dir: frontend
     deps: [frontend-install]
     cmds:
@@ -52,45 +56,68 @@ tasks:
 
   # --- Build ---
 
+  build-backend:
+    desc: Build the Go binary without re-building the frontend (fast)
+    cmds:
+      - go build -ldflags="{{.LDFLAGS}}" -o kubego ./cmd/server
+
   build:
-    desc: Build the Go binary with embedded frontend
+    desc: Build the Go binary with the embedded frontend
     deps: [embed-frontend]
     cmds:
-      - go build -ldflags="{{.LDFLAGS}}" -o passgo-web ./cmd/server
+      - go build -ldflags="{{.LDFLAGS}}" -o kubego ./cmd/server
 
   build-all:
     desc: Cross-compile for all platforms
     deps: [embed-frontend]
     cmds:
       - mkdir -p dist
-      - GOOS=darwin  GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/passgo-web-darwin-arm64  ./cmd/server
-      - GOOS=darwin  GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/passgo-web-darwin-amd64  ./cmd/server
-      - GOOS=linux   GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/passgo-web-linux-arm64   ./cmd/server
-      - GOOS=linux   GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/passgo-web-linux-amd64   ./cmd/server
-      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/passgo-web-windows-amd64.exe ./cmd/server
+      - GOOS=darwin  GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/kubego-darwin-arm64  ./cmd/server
+      - GOOS=darwin  GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/kubego-darwin-amd64  ./cmd/server
+      - GOOS=linux   GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o dist/kubego-linux-arm64   ./cmd/server
+      - GOOS=linux   GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/kubego-linux-amd64   ./cmd/server
+      - GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o dist/kubego-windows-amd64.exe ./cmd/server
 
-  # --- Dev ---
+  # --- Run ---
 
-  dev:
-    desc: Build and run the full app locally (frontend + backend, single binary)
-    deps: [build]
+  run:
+    desc: Build and run the backend against ~/.kube/config on :8080
+    deps: [build-backend]
     cmds:
-      - echo ""
-      - echo "  ➜  http://localhost:8080"
-      - echo ""
-      - ./passgo-web
+      - ./kubego --kubeconfig "$HOME/.kube/config" --port 8080
 
   dev-backend:
-    desc: Run the Go backend only (for split terminal dev)
+    desc: Run the Go backend with `go run` against ~/.kube/config on :8080
     cmds:
-      - go run ./cmd/server --port 8080
+      - go run ./cmd/server --kubeconfig "$HOME/.kube/config" --port 8080
 
   dev-frontend:
-    desc: Run the Vite dev server with API proxy (for split terminal dev)
+    desc: |
+      Run the Vite dev server with API proxy.
+      Currently shows errors until the frontend is ported to KubeGo routes
+      (M0 Slice 3).
     dir: frontend
     deps: [frontend-install]
     cmds:
       - npm run dev
+
+  # --- KinD dev cluster ---
+
+  kind:up:
+    desc: Create a kubego-dev KinD cluster and install KubeVirt + CDI
+    cmds:
+      - ./scripts/kind-up.sh
+
+  kind:down:
+    desc: Delete the kubego-dev KinD cluster
+    cmds:
+      - ./scripts/kind-down.sh
+
+  kind:reset:
+    desc: Delete and recreate the kubego-dev KinD cluster
+    cmds:
+      - ./scripts/kind-down.sh
+      - ./scripts/kind-up.sh
 
   # --- Tests ---
 
@@ -105,113 +132,28 @@ tasks:
       - go test ./... -v -race -count=1
 
   test-frontend:
-    desc: Run frontend tests
+    desc: Run frontend tests (may fail until the frontend is re-wired)
     dir: frontend
     deps: [frontend-install]
     cmds:
       - npx vitest run
 
-  test-all:
-    desc: Run all tests (Go + frontend)
-    deps: [test, test-frontend]
-
-  # --- Service (Ubuntu/systemd) ---
-
-  service-install:
-    desc: Install passgo-web as a systemd service (run with sudo)
+  smoke:
+    desc: |
+      End-to-end smoke test — builds the binary, starts it, hits /version,
+      logs in, and confirms a VM call returns the stub error. Safe to run
+      against any kubeconfig (real cluster, fake, or an unreachable one).
     cmds:
-      - |
-        if [ ! -f /usr/local/bin/passgo-web ]; then
-          echo "Error: /usr/local/bin/passgo-web not found."
-          echo "Copy the binary there first, e.g.:"
-          echo "  sudo cp passgo-web-linux-amd64 /usr/local/bin/passgo-web"
-          echo "  sudo chmod +x /usr/local/bin/passgo-web"
-          exit 1
-        fi
-      - |
-        printf '%s\n' \
-          '[Unit]' \
-          'Description=PassGo Web - Multipass Management UI' \
-          'After=network.target snap.multipass.multipassd.service' \
-          'Wants=snap.multipass.multipassd.service' \
-          '' \
-          '[Service]' \
-          'Type=simple' \
-          'Environment=HOME=/root' \
-          'ExecStart=/usr/local/bin/passgo-web' \
-          'Restart=on-failure' \
-          'RestartSec=5' \
-          '' \
-          '[Install]' \
-          'WantedBy=multi-user.target' \
-          > /etc/systemd/system/passgo-web.service
-      - systemctl daemon-reload
-      - systemctl enable passgo-web
-      - systemctl start passgo-web
-      - echo "passgo-web service installed and started"
-
-  service-start:
-    desc: Start the passgo-web service (run with sudo)
-    cmds:
-      - systemctl start passgo-web
-      - echo "passgo-web service started"
-
-  service-stop:
-    desc: Stop the passgo-web service (run with sudo)
-    cmds:
-      - systemctl stop passgo-web
-      - echo "passgo-web service stopped"
-
-  service-restart:
-    desc: Restart the passgo-web service (run with sudo)
-    cmds:
-      - systemctl restart passgo-web
-      - echo "passgo-web service restarted"
-
-  service-status:
-    desc: Show passgo-web service status
-    cmds:
-      - systemctl status passgo-web
-
-  service-logs:
-    desc: Follow passgo-web service logs
-    cmds:
-      - journalctl -u passgo-web -f
-
-  service-remove:
-    desc: Remove passgo-web systemd service (run with sudo)
-    cmds:
-      - systemctl stop passgo-web || true
-      - systemctl disable passgo-web || true
-      - rm -f /etc/systemd/system/passgo-web.service
-      - rm -f /usr/local/bin/passgo-web
-      - systemctl daemon-reload
-      - echo "passgo-web service removed"
-
-  # --- Update Binary ---
-
-  update-binary-linux:
-    desc: Download latest release from GitHub, stop service, replace binary, start service
-    cmds:
-      - echo "Downloading latest release..."
-      - curl -sL "https://github.com/rootisgod/passgo-webui/releases/latest/download/passgo-web-linux-amd64" -o /tmp/passgo-web-linux-amd64
-      - chmod +x /tmp/passgo-web-linux-amd64
-      - echo "Stopping service..."
-      - systemctl stop passgo-web
-      - cp /tmp/passgo-web-linux-amd64 /usr/local/bin/passgo-web
-      - rm /tmp/passgo-web-linux-amd64
-      - echo "Starting service..."
-      - systemctl start passgo-web
-      - echo "Update complete. New version:"
-      - /usr/local/bin/passgo-web --version || true
+      - ./scripts/smoke-test.sh
 
   # --- Clean ---
 
   clean:
     desc: Remove all build artifacts
     cmds:
-      - rm -f passgo-web
+      - rm -f kubego kubego-smoke
       - rm -rf dist/
       - rm -rf cmd/server/frontend/dist
       - rm -rf frontend/dist
       - rm -rf frontend/node_modules
+      - rm -f .smoke-config.json

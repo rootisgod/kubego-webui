@@ -1,5 +1,6 @@
 # Go
-passgo-web
+kubego
+kubego-smoke
 /server
 dist/
 *.exe
@@ -12,6 +13,7 @@ cmd/server/frontend/dist/
 
 # Config
 .passgo-web/
+.smoke-config.json
 
 # OS
 .DS_Store
