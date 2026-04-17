@@ -27,7 +27,7 @@ view, and packaging (Helm chart + in-cluster deployment).
 
 ## 0. Things I think are wrong in the brief — read this first
 
-I want to flag four places where the assumed mapping is too optimistic, before
+I want to flag six places where the assumed mapping is too optimistic, before
 the plan treats them as settled:
 
 1. **Suspend has no real equivalent in KubeVirt.** `runStrategy` gives you
@@ -44,11 +44,14 @@ the plan treats them as settled:
    a new VM name. Requires CSI driver with `VolumeSnapshot` support (rules out
    `hostpath`, fine on rook-ceph / longhorn / CSI-backed managed k8s).
 
-3. **`VirtualMachineInstancetype` / `VirtualMachinePreference` are still
-   stabilising.** They are a neat fit for Launch Profiles but I would not hard
-   depend on them in v1. Store profiles as normal app-level config (as
-   PassGo does today) and *optionally* materialise them as instancetype CRs
-   later. Same UX, less coupling to a moving API.
+3. **`VirtualMachineInstancetype` / `VirtualMachinePreference` graduated to
+   GA in KubeVirt 1.1 (2024), but don't hard-depend on them.** They are a
+   neat fit for Launch Profiles. The issue isn't API maturity any more —
+   it's coupling: materialising every Launch Profile as a cluster-scoped
+   `VirtualMachineInstancetype` drags a CRUD surface and an RBAC dependency
+   into a feature that works perfectly well as a JSON file. Store profiles
+   as normal app-level config (as PassGo does today) and *optionally*
+   materialise them as instancetype CRs later. Same UX, less coupling.
 
 4. **Multipass host-mounts do not translate.** `multipass mount $HOME/src vm:/src`
    bind-mounts a host path into a guest. KubeVirt has no host bind-mount
@@ -56,6 +59,28 @@ the plan treats them as settled:
    different features. We should rename the UI from "Mounts" to "Disks" and
    drop the "open in Finder" action. This **is a breaking change** to
    `/api/v1/vms/{name}/mounts` semantics.
+
+5. **`recover` and `purge` are dead verbs, not just `recover`.** Multipass
+   has soft-delete: `delete` trashes, `recover` un-trashes, `purge` empties
+   the trash. Kubernetes has no trash bin — a deleted VM CR is gone and its
+   PVCs go with it (unless `purge=false` preserves them). This kills *three*
+   REST routes, not one: `POST /vms/{name}/recover`, `POST /vms/purge`, and
+   the `deleted` status value that `VMInfo.state` can return today.
+   **Breaking:** remove `/recover` and `/purge` entirely; document that
+   `DELETE /vms/{name}?purge=false` is the only surviving reversibility
+   knob (keep the PVC, recreate the VM CR to "un-delete"). This is a
+   bigger API-shape break than suspend.
+
+6. **"The host" doesn't exist in-cluster, so every host-filesystem
+   endpoint dies.** PassGo exposes `handlers_host_files.go`
+   (`handleListHostFiles`, `handleHostHome`) and `host_open.go`
+   (`openHostPath` for macOS `open` / Linux `xdg-open` / Windows
+   `explorer`) so the browser can pick a cloud-init file from the
+   operator's laptop. In a pod, "the host" is the container's rootfs,
+   which is useless and unsafe to expose. **Breaking:** delete the file
+   browser UI and all of `GET /api/v1/host/files`, `GET /api/v1/host/home`,
+   and the mount-open action. The cloud-init picker becomes "paste YAML
+   or pick from saved templates." No host-file dialog.
 
 Everything else in the mapping you sent is broadly right.
 
@@ -85,7 +110,7 @@ for development.
                  │                ├── WebSocket proxy (browser ⇄ virt-api │
                  │                │     /console, /vnc, /portforward)     │
                  │                ├── event log (JSONL PVC or             │
-                 │                │     Kubernetes Events, open q.)       │
+                 │                │     Kubernetes Events, §7 Q9)         │
                  │                ├── scheduler (in-proc, as today)       │
                  │                └── webhook dispatcher                  │
                  │                                                        │
@@ -102,7 +127,7 @@ for development.
                  │                                                       │
                  │         Prometheus (kubevirt-prometheus-metrics)       │
                  │         CDI (DataVolume import)                        │
-                 │         CAPK + Cluster API (workload clusters) ◀── v4 │
+                 │         CAPK + Cluster API (workload clusters) ◀── v2 │
                  └────────────────────────────────────────────────────────┘
 ```
 
@@ -155,6 +180,8 @@ Verdicts: **keep** (no change), **refactor** (small edits), **replace**
   breakdown. Specific files:
   - `handlers_vms.go` — **refactor** (suspend semantics, resize semantics —
     memory resize on KubeVirt needs live-migration support or a stop/start).
+    **Breaking:** remove `handleRecoverVM` and `handlePurge` handlers
+    entirely; drop the `deleted` value from `VMInfo.state`. See §0 point 5.
   - `handlers_shell.go`, `pty_store.go`, `pty_store_unix.go`,
     `pty_store_windows.go`, `proc_unix.go`, `proc_windows.go` — **replace**
     with a much thinner WebSocket proxy. The PTY-on-the-server model is the
@@ -198,29 +225,51 @@ Verdicts: **keep** (no change), **refactor** (small edits), **replace**
   - `handlers_chat.go`, `llm_agent.go`, `llm_tools.go` — **refactor**. All 30
     LLM tools need rewriting to hit `pkg/kubevirt` instead of
     `pkg/multipass`, but the signatures stay. A few tools are additive
-    (namespace ops, cluster ops in v4).
+    (namespace ops, cluster ops in v2).
+  - `handlers_host_files.go`, `host_open.go` — **delete**. See §0 point 6.
+  - `launches.go` — **refactor, and upgrade**. PassGo's `launchTracker` is an
+    in-memory "VM is provisioning" map with a 5-minute failure TTL. On
+    KubeVirt the equivalent is first-class: CDI reports DataVolume import
+    progress (`status.progress`) and the VM's `status.printableStatus`
+    (`Provisioning`, `Starting`, `Running`) covers start-up. Keep the
+    `GET /launches` + `POST /launches/{name}/dismiss` shape for frontend
+    continuity, but back it with informer-driven DV/VM status instead of a
+    local map. Net effect: the progress bar gets more accurate for free.
+  - `handlers_configbundle.go` — **keep** (config import/export; unchanged).
+  - `handlers_system.go` — **keep** (version, defaults; unchanged).
 
 ### pkg/multipass → pkg/kubevirt (**replace wholesale**)
 
-This is the core of the rewrite. Preserve the signature set so that
-`internal/api` barely notices. Sketched interface (no code, just shape):
+This is the core of the rewrite. PassGo's `pkg/multipass.Client` is a
+concrete `struct` over a `CommandRunner` func. KubeGo's `pkg/kubevirt.Client`
+becomes an **interface** — one line of extra indirection buys us a fake for
+the handler tests (`pkg/multipass` fakes the runner; we fake the client)
+and it future-proofs for §7 Q7 (pluggable driver) if we ever revisit. This
+is a real shape change: per-method signatures are preserved, the
+package-level shape is not. Sketched interface (no code, just shape):
 
 ```
 type Client interface {
     // lifecycle
     ListVMs(ctx, scope) ([]VMInfo, error)
     GetVMInfo(ctx, ref) (VMInfo, error)
-    LaunchVM(ctx, spec LaunchSpec) error         // creates VM + optional DV + cloud-init Secret
-    CloneVM(ctx, src, dst VMRef) error           // snapshot+restore under the hood, not VMClone CRD
-    StartVM(ctx, ref) error                      // runStrategy=Always
-    StopVM(ctx, ref) error                       // runStrategy=Halted
-    SuspendVM(ctx, ref) error                    // alias for StopVM; or return 501 — decision needed
-    DeleteVM(ctx, ref, purge bool) error         // Delete VM; purge=true also deletes PVCs
-    RecoverVM(ctx, ref) error                    // only meaningful if using soft-delete; likely NOP
-    SetVMCPUs(ctx, ref, cpus int) error          // requires Halted or live-migration
+    GetVMConfig(ctx, ref) (VMConfig, error)
+    GetRawInfo(ctx, ref) (string, error)            // "kubectl describe vm" output for a debug pane
+    GetCloudInitStatus(ctx, ref) (CloudInitStatus, error)
+    LaunchVM(ctx, spec LaunchSpec) error            // creates VM + optional DV + cloud-init Secret
+    CloneVM(ctx, src, dst VMRef) error              // snapshot+restore under the hood, not VMClone CRD
+    StartVM(ctx, ref) error                         // runStrategy=Always
+    StopVM(ctx, ref) error                          // runStrategy=Halted
+    SuspendVM(ctx, ref) error                       // alias for StopVM; or return 501 — decision needed
+    StartAll(ctx, scope) error
+    StopAll(ctx, scope) error
+    DeleteVM(ctx, ref, purge bool) error            // Delete VM; purge=true also deletes PVCs
+    SetVMCPUs(ctx, ref, cpus int) error             // requires Halted or live-migration
     SetVMMemory(ctx, ref, MB int) error
-    SetVMDisk(ctx, ref, GB int) error            // PVC resize if storage class supports it
-    ExecInVM(ctx, ref, cmd string) (string, error) // qemu-guest-agent exec
+    SetVMDisk(ctx, ref, GB int) error               // PVC resize if storage class supports it
+    ExecInVM(ctx, ref, cmd string) (string, error)  // qemu-guest-agent exec
+    ExecInVMWithContext(ctx, ref, cmd) (string, error)
+    ExecInVMStreaming(ctx, ref, cmd, onLine) (string, error)
 
     // snapshots
     ListSnapshots(ctx, ref) (...)
@@ -246,6 +295,15 @@ type Client interface {
 type VMRef struct { Namespace, Name string }  // was just string in multipass
 ```
 
+Explicitly **dropped** from PassGo's surface (one-line reason each):
+- `PurgeDeleted()` — no soft-delete in Kubernetes, so no trash to empty.
+- `RecoverVM(ref)` — same; nothing to un-delete.
+- `ResolveLaunchName(string)` — multipass-specific collision handling;
+  `{namespace, name}` is already unambiguous on the cluster side.
+
+`RandomVMName` survives unchanged — still useful, just moves to
+`pkg/kubevirt`.
+
 The single biggest signature change is that every identifier becomes a
 `{namespace, name}` tuple. This ripples into every handler URL (`/vms/{name}`
 → `/vms/{ns}/{name}`, or keep `/vms/{name}` with a namespace header /
@@ -268,6 +326,7 @@ query) — open question, see §9.
 - `pkg/multipass/host_{darwin,linux,windows}.go` — host detection irrelevant.
 - `pkg/multipass/ssh_key.go` — KubeVirt injects SSH keys via cloud-init, not
   via multipass-specific plumbing.
+- `internal/api/host_open.go`, `internal/api/handlers_host_files.go` — §0 point 6.
 - All Windows-ConPTY code in internal/api — PTY is gone.
 - Multipass install / CLI-presence checks in main.
 
@@ -288,7 +347,8 @@ integrations must change.
 | `.../suspend` | **remove or alias** | see §0 point 1; breaking if removed |
 | `.../clone` | keep shape | snapshot+restore impl |
 | `.../delete` | keep shape, new `purge` semantics | purge deletes PVCs |
-| `.../recover` | **remove** | not meaningful; breaking |
+| `.../recover` | **remove** | no soft-delete; breaking; §0 point 5 |
+| `POST /api/v1/vms/purge` | **remove** | no soft-delete; breaking; §0 point 5 |
 | `.../resize` | keep shape | memory live-resize gated on live-migration support |
 | `.../exec` | keep shape | via qemu-guest-agent |
 | `.../cloudinit-status` | keep | read VMI annotation or guest-agent |
@@ -299,7 +359,8 @@ integrations must change.
 | `POST /api/v1/vms/{ns}/{name}/files/upload` / `download` / `list` / `mkdir` | change | via guest-agent or a PVC-mount sidecar; feature-flag in v1 |
 | `GET/POST/DELETE .../snapshots[...]` | keep shape | |
 | `GET/POST/DELETE .../mounts[...]` | **rename to /disks**, breaking | PVC hotplug semantics |
-| `.../mounts/open` | **remove** | host-side action, meaningless in-cluster |
+| `.../mounts/open` | **remove** | host-side action, meaningless in-cluster; §0 point 6 |
+| `GET /api/v1/host/files`, `GET /api/v1/host/home` | **remove** | no "host" in a pod; breaking; §0 point 6 |
 | `GET/POST/PUT/DELETE /api/v1/cloudinit/{name}` | keep | backed by Secret + app state |
 | `GET /api/v1/ansible/status` | keep | |
 | `GET /api/v1/ansible/inventory` | keep shape | generated from VMIs, SSH reachability caveats |
@@ -312,11 +373,13 @@ integrations must change.
 | `GET /api/v1/images` | keep | now a DataVolume source catalogue |
 | `GET /api/v1/host/resources` | **rename to /cluster/resources** | aggregated node metrics |
 | `GET /api/v1/defaults`, `PUT` | keep | |
+| `GET /api/v1/configbundle`, `POST /api/v1/configbundle` | keep | config import/export, unchanged |
 | `GET /api/v1/version` | keep | |
 | `GET/POST/DELETE /api/v1/tokens[...]` | keep | |
 | `GET/POST/PUT/DELETE /api/v1/webhooks[...]` | keep | |
 | `POST /api/v1/webhooks/{id}/test` | keep | |
 | `GET /api/v1/events` | keep | |
+| `GET /api/v1/launches`, `POST /api/v1/launches/{name}/dismiss` | keep shape | backed by DV/VM informer status, not an in-memory map; see §2 `launches.go` |
 | `GET/PUT /api/v1/chat/config`, `models`, `POST /chat` | keep | |
 
 **New endpoints:**
@@ -328,14 +391,15 @@ integrations must change.
 | `GET /api/v1/cluster/resources` | renamed from `/host/resources` |
 | `GET /api/v1/instancetypes` (optional, v2) | enumerate VirtualMachineInstancetype if feature enabled |
 | `GET /api/v1/storageclasses` | at VM create time — pick PVC backend |
-| `GET/POST/DELETE /api/v1/clusters` (v4, CAPK) | list/create/destroy workload clusters |
-| `GET /api/v1/clusters/{name}/kubeconfig` (v4) | download tenant kubeconfig |
+| `GET/POST/DELETE /api/v1/clusters` (v2, CAPK) | list/create/destroy workload clusters |
+| `GET /api/v1/clusters/{name}/kubeconfig` (v2) | download tenant kubeconfig |
 
-**Breaking-change cost summary:** if you preserve `{name}` in paths and add
-a `ns` query param with a default, most external API consumers survive. The
-clean option (path-based `{ns}/{name}`) costs one `v2/` prefix and an
-explicit deprecation of `v1/vms/{name}`. Recommend the clean option —
-introducing `v2/`. Call this out for user decision in §9.
+**Breaking-change cost summary:** KubeGo is a fork/rewrite, not an in-place
+PassGo upgrade — there is no installed base of `/api/v1/vms/{name}` clients
+to preserve. Pick the clean shape (`/api/v1/` with path-based `{ns}/{name}`)
+and move on. "Breaking" in this table means "different from PassGo's API",
+not "breaking a compatibility contract with KubeGo users" — anyone running
+KubeGo is starting fresh. See §7 Q6.
 
 ---
 
@@ -366,7 +430,7 @@ wire is preserved.
 - `VmConfigTab.vue` — resize UI warns when memory/CPU change requires
   stop/start (no live-migration) or a live-migration (if enabled).
 - `VmSummaryTab.vue` — suspend button either removed or relabeled to Stop.
-- New **ClusterView.vue** (v4, CAPK). Separate top-level tree node
+- New **ClusterView.vue** (v2, CAPK). Separate top-level tree node
   (`__clusters`) with list/create/delete and a kubeconfig download button.
 - New **NodesView.vue** or merged into existing `HostResources.vue` — cluster
   node cards (was single-host resource card).
@@ -549,7 +613,11 @@ v1" calls out the soft features.
    so Kubernetes enforces RBAC per end-user. (c) Both, switchable. (a) is
    cheap and ships, (b) is production-grade, (c) is what this needs
    eventually. Recommendation: **ship (a) in v1, commit to (b) in v2**,
-   and don't pretend otherwise.
+   and don't pretend otherwise. **The cost of (a)-first is real:** anyone
+   who integrates via bearer token owns a breaking migration when (b)
+   arrives. If we expect a non-trivial number of homelab users to script
+   against KubeGo before (b) lands, bite the bullet and do (b) in v1. If
+   it's all humans clicking buttons, (a)→(b) is fine.
 
 4. **Storage default.** What StorageClass + CSI profile do we assume for
    "local/dev"? longhorn vs rook-ceph vs host-path. This affects snapshots
@@ -562,11 +630,16 @@ v1" calls out the soft features.
    leave it to the operator? Recommendation: **document only**; shipping a
    NAD in the chart invites surprises.
 
-6. **API versioning.** Break `/api/v1/vms/{name}` to `/api/v2/vms/{ns}/{name}`
-   cleanly, or keep v1 path and add `?namespace=` with a default? External
-   API users (Ansible modules, scripts) are the constraint. Recommendation:
-   **introduce /api/v2/** and freeze /api/v1 at the Multipass-shaped
-   semantics (i.e. retired). Costs one stable-deprecation cycle.
+6. **API versioning.** KubeGo is a fork/rewrite, not an in-place upgrade.
+   There is no installed base of `/api/v1/vms/{name}` clients that we owe
+   backwards compatibility to — anyone running the KubeGo binary is
+   starting fresh, so there's no deprecation cycle to pay. The real
+   question is whether to number the KubeGo API `/api/v1/` (new project,
+   new API, no relationship to PassGo) or `/api/v2/` (signal the semantic
+   discontinuity to readers who know PassGo). Recommendation: **`/api/v1/`
+   with path-based `{ns}/{name}`.** It's a new project; naming it v2 is
+   cosplay. The namespace-in-path decision stands (clean URLs, no
+   ambiguous defaults).
 
 7. **Pluggable driver.** Should KubeGo keep Multipass working behind the same
    interface, so the same UI drives both? It sounds elegant but the
@@ -585,10 +658,13 @@ v1" calls out the soft features.
    **JSONL on PVC in v1**, mirror to Kubernetes Events in v2.
 
 10. **Do we do CAPK at all, or only VM orchestration?** CAPK is the
-    differentiator that makes this interesting. But it is pre-1.0 (v0.11.2
-    as of March 2026) and networking is the hard part. Recommendation:
-    **yes, but as M9 / v2**, and commit to it in the roadmap so the
-    architecture doesn't close the door. No CAPK-specific code in v1.
+    differentiator that makes this interesting. But it is still pre-1.0
+    and networking is the hard part. (The "v0.11.2 as of March 2026"
+    version figure in the brief is unverified — confirm the current
+    release at implementation time rather than treat this as fact.)
+    Recommendation: **yes, but as M9 / v2**, and commit to it in the
+    roadmap so the architecture doesn't close the door. No CAPK-specific
+    code in v1.
 
 ---
 
