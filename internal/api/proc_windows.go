@@ -5,7 +5,8 @@ package api
 import "os/exec"
 
 func setProcGroup(cmd *exec.Cmd) {
-	// No process group support on Windows; no-op.
+	// No process group support on Windows; the runner relies on Process.Kill
+	// which terminates the child but not grandchildren.
 }
 
 func killProcGroup(cmd *exec.Cmd) {

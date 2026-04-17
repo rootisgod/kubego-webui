@@ -28,7 +28,7 @@ func (s *Server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	if err := s.mp.TransferFromVM(name, remotePath, w); err != nil {
+	if err := s.kv.TransferFromVM(name, remotePath, w); err != nil {
 		// Headers already sent if partial data was written; log the error
 		s.logger.Error("file download failed", "err", err, "vm", name, "path", remotePath)
 		return
@@ -65,7 +65,7 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 
 	remotePath := destDir + "/" + header.Filename
 
-	if err := s.mp.TransferToVM(name, remotePath, file); err != nil {
+	if err := s.kv.TransferToVM(name, remotePath, file); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -95,7 +95,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := s.mp.ExecInVM(name, []string{"ls", "-la", dirPath})
+	output, err := s.kv.ExecInVM(name, []string{"ls", "-la", dirPath})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -165,7 +165,7 @@ func (s *Server) handleMkdirInVM(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
-	if _, err := s.mp.ExecInVM(name, []string{"sudo", "mkdir", "-p", req.Path}); err != nil {
+	if _, err := s.kv.ExecInVM(name, []string{"sudo", "mkdir", "-p", req.Path}); err != nil {
 		if s.eventLog != nil {
 			s.eventLog.EmitEvent("vm", "mkdir", "user", name, "failed", req.Path+": "+err.Error())
 		}

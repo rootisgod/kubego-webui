@@ -16,7 +16,7 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	defer s.cfgMu.Unlock()
 
 	// Auto-clean stale VM assignments
-	vms, err := s.mp.ListVMs()
+	vms, err := s.kv.ListVMs()
 	if err == nil {
 		vmNames := make(map[string]bool, len(vms))
 		for _, vm := range vms {

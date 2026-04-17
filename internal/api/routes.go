@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/internal/config"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 type Server struct {
-	mp                 *multipass.Client
+	kv                 kubevirt.Client
 	cfg                *config.Config
 	configPath         string // path to the loaded config file — all Save() calls must use this, not DefaultConfigPath
 	logger             *slog.Logger
@@ -23,24 +23,22 @@ type Server struct {
 	builtinTemplatesFS embed.FS
 	launches           *launchTracker
 	sessions           *sessionStore
-	ptySessions        *ptyStore
 	// cfgMu serialises read/modify/write of Config. Gates every mutation:
 	// groups, VM-group assignments, tokens, webhooks, profiles, schedules,
-	// LLM config. Held across cfg.Save() on purpose — releasing it before the
-	// write would need a deep Clone() of Config to avoid racing map mutations
-	// against json.Marshal, and on a homelab the ms-scale save is not a
-	// contention point worth that complexity.
-	cfgMu              sync.Mutex
-	ansibleRunner      ansibleRunner
-	scheduler          *scheduler
-	loginLimiter       *loginRateLimiter
-	apiLimiter         *apiRateLimiter
-	eventLog           *EventLog
+	// LLM config. Held across cfg.Save() — the ms-scale save is not a
+	// contention point on a homelab and avoids a deep Clone() to dodge
+	// map-mutation races against json.Marshal.
+	cfgMu         sync.Mutex
+	ansibleRunner ansibleRunner
+	scheduler     *scheduler
+	loginLimiter  *loginRateLimiter
+	apiLimiter    *apiRateLimiter
+	eventLog      *EventLog
 }
 
-func NewServer(mp *multipass.Client, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
+func NewServer(kv kubevirt.Client, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
 	s := &Server{
-		mp:                 mp,
+		kv:                 kv,
 		cfg:                cfg,
 		configPath:         configPath,
 		logger:             logger,
@@ -50,16 +48,13 @@ func NewServer(mp *multipass.Client, cfg *config.Config, configPath string, logg
 		builtinTemplatesFS: builtinTemplatesFS,
 		launches:           newLaunchTracker(),
 		sessions:           newSessionStore(24 * time.Hour),
-		ptySessions:        newPtyStore(logger),
 		loginLimiter:       newLoginRateLimiter(5, time.Minute),
 		apiLimiter:         newAPIRateLimiter(30, time.Minute, cfg.TrustProxy),
 	}
-	// Wire up ansible queue: when a queued run needs to start, use the server's startPlaybookRun
 	s.ansibleRunner.startFunc = s.startPlaybookRun
 	s.scheduler = newScheduler(s)
 	s.scheduler.start()
 
-	// Event log for audit trail — derive path from the configured config location
 	eventsPath := filepath.Join(filepath.Dir(configPath), "events.jsonl")
 	el, err := NewEventLog(eventsPath, logger)
 	if err != nil {
@@ -74,10 +69,8 @@ func NewServer(mp *multipass.Client, cfg *config.Config, configPath string, logg
 	return s
 }
 
-// Shutdown cleans up server resources including persistent PTY sessions.
 func (s *Server) Shutdown() {
 	s.scheduler.stop()
-	s.ptySessions.shutdown()
 	s.sessions.Shutdown()
 	s.loginLimiter.Shutdown()
 	s.apiLimiter.Shutdown()
@@ -86,7 +79,6 @@ func (s *Server) Shutdown() {
 	}
 }
 
-// rateLimited wraps a handler with the API rate limiter.
 func (s *Server) rateLimited(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := s.apiLimiter.remoteIP(r)
@@ -105,7 +97,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
 
-	// API routes
+	// Version
 	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 
 	// VMs
@@ -114,12 +106,13 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/v1/vms", s.rateLimited(s.handleCreateVM))
 	mux.HandleFunc("POST /api/v1/vms/{name}/start", s.handleStartVM)
 	mux.HandleFunc("POST /api/v1/vms/{name}/stop", s.handleStopVM)
+	// Suspend is preserved as an alias for stop — KubeVirt has no durable
+	// RAM-snapshot primitive (runStrategy does not preserve guest memory
+	// across virt-launcher restart). See PLAN.md §0.
 	mux.HandleFunc("POST /api/v1/vms/{name}/suspend", s.handleSuspendVM)
 	mux.HandleFunc("DELETE /api/v1/vms/{name}", s.handleDeleteVM)
-	mux.HandleFunc("POST /api/v1/vms/{name}/recover", s.handleRecoverVM)
 	mux.HandleFunc("POST /api/v1/vms/start-all", s.handleStartAll)
 	mux.HandleFunc("POST /api/v1/vms/stop-all", s.handleStopAll)
-	mux.HandleFunc("POST /api/v1/vms/purge", s.handlePurge)
 	mux.HandleFunc("POST /api/v1/vms/{name}/clone", s.handleCloneVM)
 	mux.HandleFunc("POST /api/v1/vms/{name}/exec", s.handleExecInVM)
 	mux.HandleFunc("GET /api/v1/launches", s.handleListLaunches)
@@ -128,15 +121,11 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("PUT /api/v1/vms/{name}/config", s.handleResizeVM)
 	mux.HandleFunc("GET /api/v1/vms/{name}/cloud-init/status", s.handleCloudInitStatus)
 
-	// File transfer
+	// File transfer (guest-agent-backed in M7)
 	mux.HandleFunc("GET /api/v1/vms/{name}/files", s.handleDownloadFile)
 	mux.HandleFunc("POST /api/v1/vms/{name}/files", s.handleUploadFile)
 	mux.HandleFunc("GET /api/v1/vms/{name}/files/ls", s.handleListFiles)
 	mux.HandleFunc("POST /api/v1/vms/{name}/files/mkdir", s.handleMkdirInVM)
-
-	// Host file browsing (used by the Browse Host… picker in mount creation)
-	mux.HandleFunc("GET /api/v1/host/files/ls", s.handleListHostFiles)
-	mux.HandleFunc("GET /api/v1/host/home", s.handleHostHome)
 
 	// Snapshots
 	mux.HandleFunc("GET /api/v1/vms/{name}/snapshots", s.handleListSnapshots)
@@ -144,15 +133,14 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/v1/vms/{name}/snapshots/{snap}/restore", s.handleRestoreSnapshot)
 	mux.HandleFunc("DELETE /api/v1/vms/{name}/snapshots/{snap}", s.handleDeleteSnapshot)
 
-	// Mounts
-	mux.HandleFunc("GET /api/v1/vms/{name}/mounts", s.handleListMounts)
-	mux.HandleFunc("POST /api/v1/vms/{name}/mounts", s.handleAddMount)
-	mux.HandleFunc("DELETE /api/v1/vms/{name}/mounts", s.handleRemoveMount)
-	mux.HandleFunc("POST /api/v1/vms/{name}/mounts/open", s.handleOpenMount)
+	// Disks (renamed from Mounts; hot-plug PVCs in M4)
+	mux.HandleFunc("GET /api/v1/vms/{name}/disks", s.handleListDisks)
+	mux.HandleFunc("POST /api/v1/vms/{name}/disks", s.handleAttachDisk)
+	mux.HandleFunc("DELETE /api/v1/vms/{name}/disks", s.handleDetachDisk)
 
 	// System
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)
-	mux.HandleFunc("GET /api/v1/host/resources", s.handleHostResources)
+	mux.HandleFunc("GET /api/v1/cluster/resources", s.handleClusterResources)
 	mux.HandleFunc("GET /api/v1/config/vm-defaults", s.handleGetVMDefaults)
 	mux.HandleFunc("PUT /api/v1/config/vm-defaults", s.handleUpdateVMDefaults)
 	mux.HandleFunc("GET /api/v1/config/export", s.handleExportConfig)
@@ -223,18 +211,15 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("PUT /api/v1/chat/config", s.handleUpdateChatConfig)
 	mux.HandleFunc("GET /api/v1/chat/models", s.handleListModels)
 
-	// Shell sessions
-	mux.HandleFunc("POST /api/v1/vms/{name}/shell/sessions", s.handleCreateShellSession)
-	mux.HandleFunc("GET /api/v1/vms/{name}/shell/sessions", s.handleListShellSessions)
-	mux.HandleFunc("DELETE /api/v1/vms/{name}/shell/sessions/{sessionId}", s.handleDeleteShellSession)
-	mux.HandleFunc("/api/v1/vms/{name}/shell/{sessionId}", s.handleShell)
+	// Shell sessions are M2 — backend SerialConsole proxy to virt-api.
+	// Not registered until that milestone; frontend hides the Shell tab
+	// when the list-sessions endpoint 404s.
 
-	// Serve static frontend for all non-API routes
+	// Static frontend
 	if staticFS != nil {
 		mux.Handle("/", staticFS)
 	}
 
-	// Apply global middleware (outermost first)
 	var handler http.Handler = mux
 	handler = authMiddleware(s.sessions, s.cfg, handler)
 	handler = bodySizeLimitMiddleware(handler)

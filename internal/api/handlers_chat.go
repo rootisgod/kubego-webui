@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
+	"github.com/rootisgod/kubego-webui/internal/config"
 )
 
 type chatRequestBody struct {

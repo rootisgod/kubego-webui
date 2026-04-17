@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 type ansibleRunRequest struct {
@@ -66,7 +66,7 @@ func (s *Server) handleAnsibleStatus(w http.ResponseWriter, r *http.Request) {
 		sshKeyPath = s.cfg.VMDefaults.SSHPrivateKey
 	}
 	if sshKeyPath == "" {
-		sshKeyPath = multipass.FindMultipassSSHKey()
+		sshKeyPath = ""
 	}
 
 	writeJSON(w, http.StatusOK, ansibleStatusResponse{
@@ -111,7 +111,7 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = multipass.ReadPlaybook(s.cfg.PlaybooksDir, req.Playbook)
+	_, err = kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, req.Playbook)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "playbook not found")
 		return
@@ -150,7 +150,7 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		sshKey = s.cfg.VMDefaults.SSHPrivateKey
 	}
 	if sshKey == "" {
-		sshKey = multipass.FindMultipassSSHKey()
+		sshKey = ""
 	}
 	inventory, err := s.generateInventoryYAML(targetVMs, user, sshKey)
 	if err != nil {
@@ -293,7 +293,7 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		return
 	}
 
-	_, err = multipass.ReadPlaybook(s.cfg.PlaybooksDir, playbook)
+	_, err = kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, playbook)
 	if err != nil {
 		s.logger.Error("playbook not found for queued run", "playbook", playbook, "err", err)
 		return
@@ -306,7 +306,7 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		sshKey = s.cfg.VMDefaults.SSHPrivateKey
 	}
 	if sshKey == "" {
-		sshKey = multipass.FindMultipassSSHKey()
+		sshKey = ""
 	}
 	inventory, err := s.generateInventoryYAML(vms, user, sshKey)
 	if err != nil {

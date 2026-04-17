@@ -9,13 +9,13 @@ import (
 	"slices"
 	"time"
 
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 // progressFn is called during long-running tool execution to send progress updates.
 type progressFn func(line string)
 
-// executeTool dispatches a tool call to the corresponding multipass.Client method.
+// executeTool dispatches a tool call to the corresponding kubevirt.Client method.
 // Tool-level errors are returned as JSON strings (not Go errors) so the LLM can
 // explain failures to the user. Only truly unexpected errors return as Go errors.
 func (s *Server) executeTool(toolName string, argsJSON string) (string, error) {
@@ -31,7 +31,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 
 	switch toolName {
 	case "list_vms":
-		vms, err := s.mp.ListVMs()
+		vms, err := s.kv.ListVMs()
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -44,7 +44,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		vm, err := s.mp.GetVMInfo(args.Name)
+		vm, err := s.kv.GetVMInfo(args.Name)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -57,7 +57,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.StartVM(args.Name); err != nil {
+		if err := s.kv.StartVM(args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"started","vm":"%s"}`, args.Name), nil
@@ -69,7 +69,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.StopVM(args.Name); err != nil {
+		if err := s.kv.StopVM(args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"stopped","vm":"%s"}`, args.Name), nil
@@ -81,7 +81,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.SuspendVM(args.Name); err != nil {
+		if err := s.kv.SuspendVM(args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"suspended","vm":"%s"}`, args.Name), nil
@@ -94,7 +94,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.DeleteVM(args.Name, args.Purge); err != nil {
+		if err := s.kv.DeleteVM(args.Name, args.Purge); err != nil {
 			return toolError(err), nil
 		}
 		action := "deleted"
@@ -102,18 +102,6 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 			action = "purged"
 		}
 		return fmt.Sprintf(`{"status":"%s","vm":"%s"}`, action, args.Name), nil
-
-	case "recover_vm":
-		var args struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
-		}
-		if err := s.mp.RecoverVM(args.Name); err != nil {
-			return toolError(err), nil
-		}
-		return fmt.Sprintf(`{"status":"recovered","vm":"%s"}`, args.Name), nil
 
 	case "create_vm":
 		var args struct {
@@ -142,7 +130,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 				tmpCloudInit = tmp
 			} else if s.cfg.CloudInitDir != "" {
 				// Try user templates
-				content, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.CloudInit)
+				content, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.CloudInit)
 				if err != nil {
 					return toolError(fmt.Errorf("cloud-init template '%s' not found", args.CloudInit)), nil
 				}
@@ -160,7 +148,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		// Launch asynchronously and poll for completion, sending progress updates
 		vmName := args.Name
 		if vmName == "" {
-			vmName = multipass.RandomVMName()
+			vmName = kubevirt.RandomVMName()
 		}
 		type launchResult struct {
 			name string
@@ -168,7 +156,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		}
 		done := make(chan launchResult, 1)
 		go func() {
-			name, err := s.mp.LaunchVM(args.Name, args.Image, args.CPUs, args.MemoryMB, args.DiskGB, cloudInitFile, "")
+			name, err := s.kv.LaunchVM(args.Name, args.Image, args.CPUs, args.MemoryMB, args.DiskGB, cloudInitFile, "")
 			// Clean up temp file
 			if tmpCloudInit != "" {
 				os.Remove(tmpCloudInit)
@@ -202,7 +190,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		output, err := s.mp.ExecInVMStreaming(ctx, args.VM, args.Command, progress)
+		output, err := s.kv.ExecInVMStreaming(ctx, args.VM, args.Command, progress)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -217,7 +205,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.CreateSnapshot(args.VM, args.Name, args.Comment); err != nil {
+		if err := s.kv.CreateSnapshot(args.VM, args.Name, args.Comment); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"created","vm":"%s","snapshot":"%s"}`, args.VM, args.Name), nil
@@ -229,7 +217,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		snaps, err := s.mp.ListSnapshots(args.VM)
+		snaps, err := s.kv.ListSnapshots(args.VM)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -243,7 +231,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.RestoreSnapshot(args.VM, args.Snapshot); err != nil {
+		if err := s.kv.RestoreSnapshot(args.VM, args.Snapshot); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"restored","vm":"%s","snapshot":"%s"}`, args.VM, args.Snapshot), nil
@@ -256,13 +244,13 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.mp.DeleteSnapshot(args.VM, args.Snapshot); err != nil {
+		if err := s.kv.DeleteSnapshot(args.VM, args.Snapshot); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"deleted","vm":"%s","snapshot":"%s"}`, args.VM, args.Snapshot), nil
 
 	case "list_networks":
-		nets, err := s.mp.ListNetworks()
+		nets, err := s.kv.ListNetworks()
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -377,7 +365,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if s.cfg.CloudInitDir != "" {
 			dirs = append(dirs, s.cfg.CloudInitDir)
 		}
-		templates, err := s.mp.GetAllCloudInitTemplates(dirs)
+		templates, err := s.kv.GetAllCloudInitTemplates(dirs)
 		if err != nil {
 			templates = nil
 		}
@@ -387,14 +375,14 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 			if entry.IsDir() {
 				continue
 			}
-			templates = append(templates, multipass.TemplateOption{
+			templates = append(templates, kubevirt.TemplateOption{
 				Label:   entry.Name(),
 				Path:    "builtin:" + entry.Name(),
 				BuiltIn: true,
 			})
 		}
 		if templates == nil {
-			templates = []multipass.TemplateOption{}
+			templates = []kubevirt.TemplateOption{}
 		}
 		return toJSON(templates), nil
 
@@ -412,7 +400,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if s.cfg.CloudInitDir == "" {
 			return toolError(fmt.Errorf("template '%s' not found", args.Name)), nil
 		}
-		content, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.Name)
+		content, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.Name)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -432,14 +420,14 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if args.Name == "" || args.Content == "" {
 			return toolError(fmt.Errorf("name and content are required")), nil
 		}
-		if err := multipass.ValidateCloudInitYAML(args.Content); err != nil {
+		if err := kubevirt.ValidateCloudInitYAML(args.Content); err != nil {
 			return toolError(fmt.Errorf("invalid cloud-init content: %w", err)), nil
 		}
 		// Check if already exists
-		if _, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.Name); err == nil {
+		if _, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.Name); err == nil {
 			return toolError(fmt.Errorf("template '%s' already exists", args.Name)), nil
 		}
-		if err := multipass.WriteCloudInitTemplate(s.cfg.CloudInitDir, args.Name, args.Content); err != nil {
+		if err := kubevirt.WriteCloudInitTemplate(s.cfg.CloudInitDir, args.Name, args.Content); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"created","template":"%s"}`, args.Name), nil
@@ -458,14 +446,14 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if args.Content == "" {
 			return toolError(fmt.Errorf("content is required")), nil
 		}
-		if err := multipass.ValidateCloudInitYAML(args.Content); err != nil {
+		if err := kubevirt.ValidateCloudInitYAML(args.Content); err != nil {
 			return toolError(fmt.Errorf("invalid cloud-init content: %w", err)), nil
 		}
 		// Verify it exists
-		if _, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.Name); err != nil {
+		if _, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, args.Name); err != nil {
 			return toolError(fmt.Errorf("template '%s' not found", args.Name)), nil
 		}
-		if err := multipass.WriteCloudInitTemplate(s.cfg.CloudInitDir, args.Name, args.Content); err != nil {
+		if err := kubevirt.WriteCloudInitTemplate(s.cfg.CloudInitDir, args.Name, args.Content); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"updated","template":"%s"}`, args.Name), nil
@@ -480,13 +468,13 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if s.cfg.CloudInitDir == "" {
 			return toolError(fmt.Errorf("cloud-init directory not configured")), nil
 		}
-		if err := multipass.DeleteCloudInitTemplate(s.cfg.CloudInitDir, args.Name); err != nil {
+		if err := kubevirt.DeleteCloudInitTemplate(s.cfg.CloudInitDir, args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"deleted","template":"%s"}`, args.Name), nil
 
 	case "list_playbooks":
-		names, err := multipass.ListPlaybooks(s.cfg.PlaybooksDir)
+		names, err := kubevirt.ListPlaybooks(s.cfg.PlaybooksDir)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -506,7 +494,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		content, err := multipass.ReadPlaybook(s.cfg.PlaybooksDir, args.Name)
+		content, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, args.Name)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -523,10 +511,10 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if args.Name == "" || args.Content == "" {
 			return toolError(fmt.Errorf("name and content are required")), nil
 		}
-		if _, err := multipass.ReadPlaybook(s.cfg.PlaybooksDir, args.Name); err == nil {
+		if _, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, args.Name); err == nil {
 			return toolError(fmt.Errorf("playbook '%s' already exists", args.Name)), nil
 		}
-		if err := multipass.WritePlaybook(s.cfg.PlaybooksDir, args.Name, args.Content); err != nil {
+		if err := kubevirt.WritePlaybook(s.cfg.PlaybooksDir, args.Name, args.Content); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"created","playbook":"%s"}`, args.Name), nil
@@ -542,10 +530,10 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if args.Content == "" {
 			return toolError(fmt.Errorf("content is required")), nil
 		}
-		if _, err := multipass.ReadPlaybook(s.cfg.PlaybooksDir, args.Name); err != nil {
+		if _, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, args.Name); err != nil {
 			return toolError(fmt.Errorf("playbook '%s' not found", args.Name)), nil
 		}
-		if err := multipass.WritePlaybook(s.cfg.PlaybooksDir, args.Name, args.Content); err != nil {
+		if err := kubevirt.WritePlaybook(s.cfg.PlaybooksDir, args.Name, args.Content); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"updated","playbook":"%s"}`, args.Name), nil
@@ -557,7 +545,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := multipass.DeletePlaybook(s.cfg.PlaybooksDir, args.Name); err != nil {
+		if err := kubevirt.DeletePlaybook(s.cfg.PlaybooksDir, args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"deleted","playbook":"%s"}`, args.Name), nil

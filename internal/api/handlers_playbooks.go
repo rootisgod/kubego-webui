@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 type playbookEntry struct {
@@ -22,7 +22,7 @@ type playbookRequest struct {
 }
 
 func (s *Server) handleListPlaybooks(w http.ResponseWriter, r *http.Request) {
-	names, err := multipass.ListPlaybooks(s.cfg.PlaybooksDir)
+	names, err := kubevirt.ListPlaybooks(s.cfg.PlaybooksDir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list playbooks")
 		return
@@ -36,7 +36,7 @@ func (s *Server) handleListPlaybooks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetPlaybook(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	content, err := multipass.ReadPlaybook(s.cfg.PlaybooksDir, name)
+	content, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "playbook not found")
 		return
@@ -55,11 +55,11 @@ func (s *Server) handleCreatePlaybook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and content are required")
 		return
 	}
-	if _, err := multipass.ReadPlaybook(s.cfg.PlaybooksDir, req.Name); err == nil {
+	if _, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, req.Name); err == nil {
 		writeError(w, http.StatusConflict, "playbook already exists")
 		return
 	}
-	if err := multipass.WritePlaybook(s.cfg.PlaybooksDir, req.Name, req.Content); err != nil {
+	if err := kubevirt.WritePlaybook(s.cfg.PlaybooksDir, req.Name, req.Content); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -80,11 +80,11 @@ func (s *Server) handleUpdatePlaybook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "content is required")
 		return
 	}
-	if _, err := multipass.ReadPlaybook(s.cfg.PlaybooksDir, name); err != nil {
+	if _, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, name); err != nil {
 		writeError(w, http.StatusNotFound, "playbook not found")
 		return
 	}
-	if err := multipass.WritePlaybook(s.cfg.PlaybooksDir, name, req.Content); err != nil {
+	if err := kubevirt.WritePlaybook(s.cfg.PlaybooksDir, name, req.Content); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -93,7 +93,7 @@ func (s *Server) handleUpdatePlaybook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeletePlaybook(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if err := multipass.DeletePlaybook(s.cfg.PlaybooksDir, name); err != nil {
+	if err := kubevirt.DeletePlaybook(s.cfg.PlaybooksDir, name); err != nil {
 		writeError(w, http.StatusNotFound, "playbook not found")
 		return
 	}

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 const (
@@ -376,8 +376,6 @@ func describeBulkOperation(toolCalls []toolCall) string {
 			} else {
 				ops = append(ops, fmt.Sprintf("Delete '%s'", target))
 			}
-		case "recover_vm":
-			ops = append(ops, fmt.Sprintf("Recover '%s'", target))
 		case "create_snapshot":
 			ops = append(ops, fmt.Sprintf("Snapshot '%s'", target))
 		case "restore_snapshot":
@@ -394,11 +392,11 @@ func describeBulkOperation(toolCalls []toolCall) string {
 // buildSystemPrompt creates a system message with current VM inventory.
 func (s *Server) buildSystemPrompt() string {
 	var sb strings.Builder
-	sb.WriteString(`You are an AI assistant for managing Multipass virtual machines via PassGo Web.
+	sb.WriteString(`You are an AI assistant for managing KubeVirt virtual machines via KubeGo.
 Keep responses concise and helpful.
 
 YOUR TOOLS:
-- VM lifecycle: list_vms, get_vm_info, create_vm, start_vm, stop_vm, suspend_vm, delete_vm, recover_vm
+- VM lifecycle: list_vms, get_vm_info, create_vm, start_vm, stop_vm, suspend_vm, delete_vm
 - Snapshots: list_snapshots, create_snapshot, restore_snapshot, delete_snapshot
 - Execution: exec_command (run commands inside a VM)
 - Networks: list_networks
@@ -496,7 +494,7 @@ RULES:
 		sb.WriteString("MODE: READ-ONLY. You can only view information. All state-changing actions are disabled.\n\n")
 	}
 
-	vms, err := s.mp.ListVMs()
+	vms, err := s.kv.ListVMs()
 	if err != nil {
 		sb.WriteString("CURRENT VM STATE: Unable to fetch VMs: " + err.Error() + "\n")
 		return sb.String()
@@ -555,11 +553,11 @@ RULES:
 	if s.cfg.CloudInitDir != "" {
 		dirs = append(dirs, s.cfg.CloudInitDir)
 	}
-	templates, _ := s.mp.GetAllCloudInitTemplates(dirs)
+	templates, _ := s.kv.GetAllCloudInitTemplates(dirs)
 	entries, _ := s.builtinTemplatesFS.ReadDir("cloud-init")
 	for _, entry := range entries {
 		if !entry.IsDir() {
-			templates = append(templates, multipass.TemplateOption{Label: entry.Name(), BuiltIn: true})
+			templates = append(templates, kubevirt.TemplateOption{Label: entry.Name(), BuiltIn: true})
 		}
 	}
 	if len(templates) > 0 {
@@ -574,7 +572,7 @@ RULES:
 	}
 
 	// Include ansible playbook list
-	playbookNames, _ := multipass.ListPlaybooks(s.cfg.PlaybooksDir)
+	playbookNames, _ := kubevirt.ListPlaybooks(s.cfg.PlaybooksDir)
 	if len(playbookNames) > 0 {
 		sb.WriteString(fmt.Sprintf("\nANSIBLE PLAYBOOKS (%d):\n", len(playbookNames)))
 		for _, name := range playbookNames {

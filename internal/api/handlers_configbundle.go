@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/internal/config"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 type configBundle struct {
@@ -95,7 +95,7 @@ func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
 			if !strings.HasSuffix(lower, ".yml") && !strings.HasSuffix(lower, ".yaml") {
 				continue
 			}
-			content, err := multipass.ReadCloudInitTemplate(cloudInitDir, e.Name())
+			content, err := kubevirt.ReadCloudInitTemplate(cloudInitDir, e.Name())
 			if err != nil {
 				s.logger.Warn("export: skip cloud-init template", "name", e.Name(), "err", err)
 				continue
@@ -106,10 +106,10 @@ func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Read playbooks
 	playbooks := make(map[string]string)
-	names, err := multipass.ListPlaybooks(playbooksDir)
+	names, err := kubevirt.ListPlaybooks(playbooksDir)
 	if err == nil {
 		for _, name := range names {
-			content, err := multipass.ReadPlaybook(playbooksDir, name)
+			content, err := kubevirt.ReadPlaybook(playbooksDir, name)
 			if err != nil {
 				s.logger.Warn("export: skip playbook", "name", name, "err", err)
 				continue
@@ -211,7 +211,7 @@ func (s *Server) handleImportConfig(w http.ResponseWriter, r *http.Request) {
 
 	templatesWritten := 0
 	for name, content := range bundle.CloudInitTemplates {
-		if err := multipass.WriteCloudInitTemplate(cloudInitDir, name, content); err != nil {
+		if err := kubevirt.WriteCloudInitTemplate(cloudInitDir, name, content); err != nil {
 			s.logger.Warn("import: skip cloud-init template", "name", name, "err", err)
 			continue
 		}
@@ -220,7 +220,7 @@ func (s *Server) handleImportConfig(w http.ResponseWriter, r *http.Request) {
 
 	playbooksWritten := 0
 	for name, content := range bundle.Playbooks {
-		if err := multipass.WritePlaybook(playbooksDir, name, content); err != nil {
+		if err := kubevirt.WritePlaybook(playbooksDir, name, content); err != nil {
 			s.logger.Warn("import: skip playbook", "name", name, "err", err)
 			continue
 		}

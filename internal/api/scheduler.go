@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
+	"github.com/rootisgod/kubego-webui/internal/config"
 )
 
 const maxHistoryEntries = 50
@@ -209,14 +209,14 @@ func (sc *scheduler) execute(sched config.Schedule, vmGroups map[string]string) 
 	switch sched.Action {
 	case "start":
 		for _, vm := range targets {
-			if err := sc.server.mp.StartVM(vm); err != nil {
+			if err := sc.server.kv.StartVM(vm); err != nil {
 				sc.server.logger.Error("scheduled start failed", "vm", vm, "schedule", sched.ID, "err", err)
 				errors = append(errors, vm+": "+err.Error())
 			}
 		}
 	case "stop":
 		for _, vm := range targets {
-			if err := sc.server.mp.StopVM(vm); err != nil {
+			if err := sc.server.kv.StopVM(vm); err != nil {
 				sc.server.logger.Error("scheduled stop failed", "vm", vm, "schedule", sched.ID, "err", err)
 				errors = append(errors, vm+": "+err.Error())
 			}

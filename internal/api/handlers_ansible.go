@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-
-	"github.com/rootisgod/passgo-web/pkg/multipass"
 )
 
 type inventoryHost struct {
@@ -17,7 +15,7 @@ type inventoryHost struct {
 // generateInventoryYAML builds an Ansible inventory YAML string from running VMs.
 // filterVMs limits to specific VM names (nil/empty = all running VMs).
 func (s *Server) generateInventoryYAML(filterVMs []string, user, sshKeyPath string) (string, error) {
-	vms, err := s.mp.ListVMs()
+	vms, err := s.kv.ListVMs()
 	if err != nil {
 		return "", fmt.Errorf("failed to list VMs: %w", err)
 	}
@@ -107,7 +105,7 @@ func (s *Server) handleAnsibleInventory(w http.ResponseWriter, r *http.Request) 
 		sshKey = s.cfg.VMDefaults.SSHPrivateKey
 	}
 	if sshKey == "" {
-		sshKey = multipass.FindMultipassSSHKey()
+		sshKey = ""
 	}
 
 	var filterVMs []string
