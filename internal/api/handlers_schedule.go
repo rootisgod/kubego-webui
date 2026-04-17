@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/rootisgod/passgo-web/internal/config"
+	"github.com/rootisgod/kubego-webui/internal/config"
 )
 
 func (s *Server) handleRunScheduleNow(w http.ResponseWriter, r *http.Request) {

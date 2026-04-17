@@ -10,7 +10,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	snapshots, err := s.mp.ListSnapshots(name)
+	snapshots, err := s.kv.ListSnapshots(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -33,7 +33,7 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "snapshot name is required")
 		return
 	}
-	if err := s.mp.CreateSnapshot(vmName, req.Name, req.Comment); err != nil {
+	if err := s.kv.CreateSnapshot(vmName, req.Name, req.Comment); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "create_snapshot", vmName, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -51,7 +51,7 @@ func (s *Server) handleRestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.mp.RestoreSnapshot(vmName, snap); err != nil {
+	if err := s.kv.RestoreSnapshot(vmName, snap); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "restore_snapshot", vmName, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -69,7 +69,7 @@ func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.mp.DeleteSnapshot(vmName, snap); err != nil {
+	if err := s.kv.DeleteSnapshot(vmName, snap); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "delete_snapshot", vmName, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

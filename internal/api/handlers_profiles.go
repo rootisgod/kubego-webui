@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/rootisgod/passgo-web/internal/config"
+	"github.com/rootisgod/kubego-webui/internal/config"
 )
 
 func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {

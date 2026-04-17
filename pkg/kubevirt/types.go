@@ -1,0 +1,105 @@
+package kubevirt
+
+// VMInfo represents full details about a virtual machine.
+// Fields are shaped to match PassGo's wire format so the existing
+// frontend renders until it is ported to the KubeVirt-native shape.
+type VMInfo struct {
+	Name           string     `json:"name"`
+	Namespace      string     `json:"namespace"`
+	State          string     `json:"state"`
+	Snapshots      int        `json:"snapshots"`
+	IPv4           []string   `json:"ipv4"`
+	Release        string     `json:"release"`
+	ImageHash      string     `json:"image_hash"`
+	CPUs           string     `json:"cpus"`
+	Load           string     `json:"load"`
+	DiskUsage      string     `json:"disk_usage"`
+	DiskTotal      string     `json:"disk_total"`
+	MemoryUsage    string     `json:"memory_usage"`
+	MemoryTotal    string     `json:"memory_total"`
+	MemoryUsageRaw int64      `json:"memory_usage_raw"`
+	MemoryTotalRaw int64      `json:"memory_total_raw"`
+	DiskUsageRaw   int64      `json:"disk_usage_raw"`
+	DiskTotalRaw   int64      `json:"disk_total_raw"`
+	Disks          []DiskInfo `json:"disks"`
+}
+
+// SnapshotInfo represents a VirtualMachineSnapshot CR.
+type SnapshotInfo struct {
+	Instance string   `json:"instance"`
+	Name     string   `json:"name"`
+	Parent   string   `json:"parent"`
+	Comment  string   `json:"comment"`
+	Created  string   `json:"created,omitempty"`
+	Children []string `json:"children,omitempty"`
+}
+
+// DiskInfo represents a disk attached to a VM (renamed from multipass MountInfo).
+// In M0 the fields still mirror the multipass mount shape; M4 reshapes this
+// to a PVC-hotplug-native record once disks are implemented.
+type DiskInfo struct {
+	SourcePath string   `json:"source_path"`
+	TargetPath string   `json:"target_path"`
+	UIDMaps    []string `json:"uid_maps"`
+	GIDMaps    []string `json:"gid_maps"`
+}
+
+// NetworkInfo represents a cluster network choice surfaced at VM-create time.
+// For M0 this will enumerate NetworkAttachmentDefinitions plus a synthetic
+// "pod" entry.
+type NetworkInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+// TemplateOption represents a selectable cloud-init template.
+type TemplateOption struct {
+	Label   string `json:"label"`
+	Path    string `json:"path"`
+	BuiltIn bool   `json:"builtIn,omitempty"`
+}
+
+// ImageInfo represents an entry in the VM-launch image catalogue.
+// Sourced from app config in M0; populated from DataVolume source URLs
+// later.
+type ImageInfo struct {
+	Name    string   `json:"name"`
+	Aliases []string `json:"aliases"`
+	OS      string   `json:"os"`
+	Release string   `json:"release"`
+	Remote  string   `json:"remote"`
+	Version string   `json:"version"`
+	Type    string   `json:"type"`
+}
+
+// VMConfig holds the spec-level resource configuration of a VM
+// (CPU/memory/disk). Readable even when the VM is stopped.
+type VMConfig struct {
+	CPUs     int   `json:"cpus"`
+	MemoryMB int64 `json:"memory_mb"`
+	DiskGB   int64 `json:"disk_gb"`
+}
+
+// CloudInitStatus reports the cloud-init run state inside a guest.
+// Populated via qemu-guest-agent exec in M5.
+type CloudInitStatus struct {
+	Status string   `json:"status"`
+	Detail string   `json:"detail"`
+	Errors []string `json:"errors,omitempty"`
+	Output string   `json:"output,omitempty"`
+}
+
+// ClusterResources replaces PassGo's HostResources. In-cluster mode
+// aggregates across nodes; external-kubeconfig mode reports the cluster
+// the operator is pointed at.
+type ClusterResources struct {
+	TotalCPUs     int     `json:"total_cpus"`
+	LoadAvg1      float64 `json:"load_avg_1"`
+	LoadAvg5      float64 `json:"load_avg_5"`
+	LoadAvg15     float64 `json:"load_avg_15"`
+	TotalMemoryMB int64   `json:"total_memory_mb"`
+	UsedMemoryMB  int64   `json:"used_memory_mb"`
+	TotalDiskMB   int64   `json:"total_disk_mb"`
+	UsedDiskMB    int64   `json:"used_disk_mb"`
+}

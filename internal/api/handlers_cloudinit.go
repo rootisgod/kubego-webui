@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 type cloudInitTemplateRequest struct {
@@ -32,7 +32,7 @@ func (s *Server) handleGetCloudInitTemplate(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "template not found")
 		return
 	}
-	content, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, name)
+	content, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -56,11 +56,11 @@ func (s *Server) handleCreateCloudInitTemplate(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Check if file already exists
-	if _, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, req.Name); err == nil {
+	if _, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, req.Name); err == nil {
 		writeError(w, http.StatusConflict, "template already exists")
 		return
 	}
-	if err := multipass.WriteCloudInitTemplate(s.cfg.CloudInitDir, req.Name, req.Content); err != nil {
+	if err := kubevirt.WriteCloudInitTemplate(s.cfg.CloudInitDir, req.Name, req.Content); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -84,11 +84,11 @@ func (s *Server) handleUpdateCloudInitTemplate(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Verify file exists
-	if _, err := multipass.ReadCloudInitTemplate(s.cfg.CloudInitDir, name); err != nil {
+	if _, err := kubevirt.ReadCloudInitTemplate(s.cfg.CloudInitDir, name); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if err := multipass.WriteCloudInitTemplate(s.cfg.CloudInitDir, name, req.Content); err != nil {
+	if err := kubevirt.WriteCloudInitTemplate(s.cfg.CloudInitDir, name, req.Content); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -101,7 +101,7 @@ func (s *Server) handleDeleteCloudInitTemplate(w http.ResponseWriter, r *http.Re
 		return
 	}
 	name := r.PathValue("name")
-	if err := multipass.DeleteCloudInitTemplate(s.cfg.CloudInitDir, name); err != nil {
+	if err := kubevirt.DeleteCloudInitTemplate(s.cfg.CloudInitDir, name); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

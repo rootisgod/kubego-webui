@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/api"
-	"github.com/rootisgod/passgo-web/internal/config"
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/internal/api"
+	"github.com/rootisgod/kubego-webui/internal/config"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 var (
@@ -39,6 +39,8 @@ func main() {
 		showVer    bool
 		username   string
 		password   string
+		kubeconfig string
+		namespace  string
 	)
 
 	flag.IntVar(&port, "port", 0, "Listen port (overrides config)")
@@ -46,16 +48,17 @@ func main() {
 	flag.BoolVar(&showVer, "version", false, "Print version and exit")
 	flag.StringVar(&username, "username", "", "Login username (overrides config)")
 	flag.StringVar(&password, "password", "", "Login password (overrides config)")
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (default: in-cluster, then $KUBECONFIG, then ~/.kube/config)")
+	flag.StringVar(&namespace, "namespace", "", "Default namespace for VM operations (default: SA namespace in-cluster, else kubeconfig context)")
 	flag.Parse()
 
 	if showVer {
-		fmt.Printf("PassGo Web %s (built %s, commit %s)\n", Version, BuildTime, GitCommit)
+		fmt.Printf("KubeGo %s (built %s, commit %s)\n", Version, BuildTime, GitCommit)
 		os.Exit(0)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	// Load or create config
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -71,14 +74,12 @@ func main() {
 		fmt.Printf("Config: %s\n", configPath)
 	}
 
-	// Auto-migrate plaintext passwords to bcrypt (plaintext login no longer supported)
 	if migrated, err := config.MigratePassword(cfg, configPath); err != nil {
 		logger.Warn("failed to migrate password to bcrypt", "err", err)
 	} else if migrated {
 		logger.Info("migrated plaintext password to bcrypt hash")
 	}
 
-	// Override from flags
 	if port > 0 {
 		cfg.Listen = fmt.Sprintf(":%d", port)
 	}
@@ -94,10 +95,26 @@ func main() {
 		cfg.Password = hashed
 	}
 
-	// Create multipass client
-	mp := multipass.NewClient(logger)
+	// Build the KubeVirt driver. Failure here means we cannot reach any
+	// Kubernetes API at all (no in-cluster config, no kubeconfig) — that's
+	// a hard error because KubeGo is useless without a cluster.
+	kvClient, err := kubevirt.NewClient(logger, kubevirt.Config{
+		Kubeconfig: kubeconfig,
+		Namespace:  namespace,
+	})
+	if err != nil {
+		logger.Error("failed to initialise KubeVirt driver", "err", err)
+		os.Exit(1)
+	}
 
-	// Set up static file serving from embedded frontend
+	// Startup CRD probe — a missing KubeVirt install is recoverable (the UI
+	// shows the empty state instead of crash-looping) so we only log here.
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := kvClient.ProbeKubeVirt(probeCtx); err != nil {
+		logger.Warn("kubevirt probe failed", "err", err)
+	}
+	probeCancel()
+
 	var staticFS http.Handler
 	distFS, err := fs.Sub(frontendFS, "frontend/dist")
 	if err != nil {
@@ -106,8 +123,7 @@ func main() {
 		staticFS = spaHandler(http.FileServerFS(distFS), distFS)
 	}
 
-	// Create and start server
-	srv := api.NewServer(mp, cfg, configPath, logger, Version, BuildTime, GitCommit, builtinTemplatesFS)
+	srv := api.NewServer(kvClient, cfg, configPath, logger, Version, BuildTime, GitCommit, builtinTemplatesFS)
 	handler := srv.Handler(staticFS)
 
 	listen := cfg.Listen
@@ -115,12 +131,13 @@ func main() {
 		listen = ":" + listen
 	}
 
-	fmt.Printf("PassGo Web %s\n", Version)
+	fmt.Printf("KubeGo %s\n", Version)
 	fmt.Printf("Config: %s\n", configPath)
+	fmt.Printf("Namespace: %s\n", kvClient.Namespace())
 	fmt.Printf("Listening on http://0.0.0.0%s\n", listen)
 
-	// Explicit server with timeouts. No WriteTimeout: shell WebSockets and
-	// LLM chat SSE are long-lived writes; per-request timeouts handle those.
+	// Long-lived writes (WebSockets, SSE) preclude a blanket WriteTimeout;
+	// per-request timeouts handle the bounded paths.
 	httpSrv := &http.Server{
 		Addr:              listen,
 		Handler:           handler,
@@ -129,7 +146,6 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// Graceful shutdown: drain in-flight requests before killing PTYs, scheduler, eventlog.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -157,15 +173,11 @@ func spaHandler(fileServer http.Handler, fsys fs.FS) http.Handler {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-
-		// Strip leading slash for fs.Stat
 		cleanPath := strings.TrimPrefix(path, "/")
 		if _, err := fs.Stat(fsys, cleanPath); err == nil {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-
-		// File not found — serve index.html for SPA routing
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	})

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
+	"github.com/rootisgod/kubego-webui/internal/config"
 )
 
 // OpenAI-compatible message types

@@ -1,4 +1,4 @@
-package multipass
+package kubevirt
 
 import (
 	"fmt"
@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-// sanitizePlaybookName validates a playbook filename and returns the safe absolute path within baseDir.
+// Ansible playbook file helpers. Playbooks are stored on the app-state
+// PVC so their on-disk representation is unchanged from PassGo; only the
+// package moves. The inventory that drives ansible-playbook is generated
+// from VMIs (see handlers_ansible.go) in M7.
+
 func sanitizePlaybookName(baseDir, name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("playbook name is required")
@@ -28,7 +32,6 @@ func sanitizePlaybookName(baseDir, name string) (string, error) {
 			return "", fmt.Errorf("invalid character in playbook name: %c", r)
 		}
 	}
-
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve base dir: %w", err)
@@ -41,7 +44,6 @@ func sanitizePlaybookName(baseDir, name string) (string, error) {
 	return absPath, nil
 }
 
-// ListPlaybooks returns sorted .yml/.yaml filenames from baseDir.
 func ListPlaybooks(baseDir string) ([]string, error) {
 	entries, err := os.ReadDir(baseDir)
 	if err != nil {
@@ -50,7 +52,6 @@ func ListPlaybooks(baseDir string) ([]string, error) {
 		}
 		return nil, fmt.Errorf("read playbooks dir: %w", err)
 	}
-
 	var names []string
 	for _, e := range entries {
 		if e.IsDir() {
@@ -65,7 +66,6 @@ func ListPlaybooks(baseDir string) ([]string, error) {
 	return names, nil
 }
 
-// ReadPlaybook reads the content of a playbook file by name from baseDir.
 func ReadPlaybook(baseDir, name string) (string, error) {
 	path, err := sanitizePlaybookName(baseDir, name)
 	if err != nil {
@@ -78,7 +78,6 @@ func ReadPlaybook(baseDir, name string) (string, error) {
 	return string(data), nil
 }
 
-// WritePlaybook writes content to a playbook file in baseDir. Creates the directory if needed.
 func WritePlaybook(baseDir, name, content string) error {
 	path, err := sanitizePlaybookName(baseDir, name)
 	if err != nil {
@@ -90,7 +89,6 @@ func WritePlaybook(baseDir, name, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-// DeletePlaybook removes a playbook file from baseDir.
 func DeletePlaybook(baseDir, name string) error {
 	path, err := sanitizePlaybookName(baseDir, name)
 	if err != nil {

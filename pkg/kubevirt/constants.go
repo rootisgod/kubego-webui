@@ -1,4 +1,4 @@
-package multipass
+package kubevirt
 
 import (
 	"fmt"
@@ -14,25 +14,30 @@ const (
 	MinRAMMB             = 512
 	MinResizeRAMMB       = 256
 	MinDiskGB            = 1
-	VMNamePrefix         = "VM-"
+	VMNamePrefix         = "vm-"
 	VMNameRandomLength   = 4
 )
 
-var UbuntuReleases = []string{"24.04", "22.04", "20.04", "18.04", "daily"}
+var UbuntuReleases = []string{"24.04", "22.04", "20.04", "daily"}
 
-// vmNamePattern mirrors multipass's own instance-name rules: leading letter/digit,
-// then up to 62 more letters, digits, or hyphens. Rejecting leading `-` is the
-// important part — it blocks flag injection when names reach exec.Command argv.
+// Name patterns are tighter than multipass: KubeVirt names must be
+// RFC 1123 DNS labels (lowercase alphanumeric + hyphen, start/end with
+// alphanumeric). We mirror that here for VM names; group/profile/playbook
+// names keep the more permissive app-level rules because they are
+// filesystem keys, not Kubernetes resource names.
 var (
-	vmNamePattern      = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`)
-	groupNamePattern   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,62}$`)
-	profileIDPattern   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`)
+	vmNamePattern       = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	groupNamePattern    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,62}$`)
+	profileIDPattern    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`)
 	playbookFilePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}\.ya?ml$`)
 )
 
 func ValidateVMName(name string) error {
+	if len(name) == 0 || len(name) > 63 {
+		return fmt.Errorf("invalid VM name %q: must be 1-63 characters", name)
+	}
 	if !vmNamePattern.MatchString(name) {
-		return fmt.Errorf("invalid VM name %q: must start with letter/digit and contain only letters, digits, and hyphens (max 63 chars)", name)
+		return fmt.Errorf("invalid VM name %q: must be a lowercase RFC 1123 DNS label (letters, digits, hyphens)", name)
 	}
 	return nil
 }

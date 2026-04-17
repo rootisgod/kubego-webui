@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/internal/config"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 // maxRequestBodySize is the global limit for JSON request bodies (1 MB).
@@ -348,7 +348,7 @@ func isTLS(r *http.Request, trustProxy bool) bool {
 // (e.g. "--all") before the name ever reaches exec.Command argv.
 func validVMName(w http.ResponseWriter, r *http.Request, key string) (string, bool) {
 	name := r.PathValue(key)
-	if err := multipass.ValidateVMName(name); err != nil {
+	if err := kubevirt.ValidateVMName(name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return "", false
 	}
@@ -358,7 +358,7 @@ func validVMName(w http.ResponseWriter, r *http.Request, key string) (string, bo
 // validSnapshotName reads a snapshot path parameter with the same rules as VM names.
 func validSnapshotName(w http.ResponseWriter, r *http.Request, key string) (string, bool) {
 	name := r.PathValue(key)
-	if err := multipass.ValidateVMName(name); err != nil {
+	if err := kubevirt.ValidateVMName(name); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid snapshot name: "+err.Error())
 		return "", false
 	}

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
+	"github.com/rootisgod/kubego-webui/internal/config"
 )
 
 // WebhookDispatcher is called after every event emission to fire matching webhooks.

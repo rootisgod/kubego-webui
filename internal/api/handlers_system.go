@@ -6,12 +6,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/rootisgod/passgo-web/internal/config"
-	"github.com/rootisgod/passgo-web/pkg/multipass"
+	"github.com/rootisgod/kubego-webui/internal/config"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
-	networks, err := s.mp.ListNetworks()
+	networks, err := s.kv.ListNetworks()
 	if err != nil {
 		// Networks can fail on some platforms; return empty list rather than error
 		writeJSON(w, http.StatusOK, []any{})
@@ -25,7 +25,7 @@ func (s *Server) handleListCloudInitTemplates(w http.ResponseWriter, r *http.Req
 	if s.cfg.CloudInitDir != "" {
 		dirs = append(dirs, s.cfg.CloudInitDir)
 	}
-	templates, err := s.mp.GetAllCloudInitTemplates(dirs)
+	templates, err := s.kv.GetAllCloudInitTemplates(dirs)
 	if err != nil {
 		templates = nil
 	}
@@ -36,7 +36,7 @@ func (s *Server) handleListCloudInitTemplates(w http.ResponseWriter, r *http.Req
 		if entry.IsDir() {
 			continue
 		}
-		templates = append(templates, multipass.TemplateOption{
+		templates = append(templates, kubevirt.TemplateOption{
 			Label:   entry.Name(),
 			Path:    "builtin:" + entry.Name(),
 			BuiltIn: true,
@@ -51,7 +51,7 @@ func (s *Server) handleListCloudInitTemplates(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleFindImages(w http.ResponseWriter, r *http.Request) {
-	images, err := s.mp.FindImages()
+	images, err := s.kv.FindImages()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -68,11 +68,10 @@ type versionResponse struct {
 	Timezone   string `json:"timezone"`
 }
 
-func (s *Server) handleHostResources(w http.ResponseWriter, r *http.Request) {
-	res, err := multipass.GetHostResources()
+func (s *Server) handleClusterResources(w http.ResponseWriter, r *http.Request) {
+	res, err := s.kv.ClusterResources()
 	if err != nil {
-		// Log partial failures but still return whatever data we collected
-		s.logger.Warn("host resources", "error", err)
+		s.logger.Warn("cluster resources", "error", err)
 	}
 	writeJSON(w, http.StatusOK, res)
 }

@@ -123,20 +123,6 @@ func init() {
 		{
 			Type: "function",
 			Function: toolFunction{
-				Name:        "recover_vm",
-				Description: "Recover a previously deleted virtual machine (only works if not purged)",
-				Parameters: json.RawMessage(`{
-					"type":"object",
-					"properties":{
-						"name":{"type":"string","description":"Name of the VM to recover"}
-					},
-					"required":["name"]
-				}`),
-			},
-		},
-		{
-			Type: "function",
-			Function: toolFunction{
 				Name:        "create_vm",
 				Description: "Create and launch a new virtual machine. All parameters are optional — defaults will be used if omitted. VM names must be unique — check the current VM state before choosing a name to avoid conflicts with existing or in-progress VMs. Use cloud_init to apply a cloud-init template during launch — this is far more reliable than running commands manually via exec_command after creation.",
 				Parameters: json.RawMessage(`{
