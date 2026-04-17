@@ -1,0 +1,199 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"path"
+	"regexp"
+	"strings"
+)
+
+func (s *Server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
+	name, ok := validVMName(w, r, "name")
+	if !ok {
+		return
+	}
+	remotePath := r.URL.Query().Get("path")
+	if remotePath == "" {
+		writeError(w, http.StatusBadRequest, "path query parameter is required")
+		return
+	}
+	if !validateRemotePath(remotePath) {
+		writeError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+
+	filename := sanitizeFilename(path.Base(remotePath))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Type", "application/octet-stream")
+
+	if err := s.mp.TransferFromVM(name, remotePath, w); err != nil {
+		// Headers already sent if partial data was written; log the error
+		s.logger.Error("file download failed", "err", err, "vm", name, "path", remotePath)
+		return
+	}
+}
+
+func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
+	name, ok := validVMName(w, r, "name")
+	if !ok {
+		return
+	}
+
+	// 32MB limit
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to parse form: "+err.Error())
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+
+	destDir := r.FormValue("path")
+	if destDir == "" {
+		destDir = "/home/ubuntu"
+	}
+	if !validateRemotePath(destDir) {
+		writeError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+
+	remotePath := destDir + "/" + header.Filename
+
+	if err := s.mp.TransferToVM(name, remotePath, file); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeMessage(w, fmt.Sprintf("uploaded %s to %s", header.Filename, remotePath))
+}
+
+type fileEntry struct {
+	Name        string `json:"name"`
+	Size        string `json:"size"`
+	Permissions string `json:"permissions"`
+	Modified    string `json:"modified"`
+	IsDir       bool   `json:"isDir"`
+}
+
+func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	name, ok := validVMName(w, r, "name")
+	if !ok {
+		return
+	}
+	dirPath := r.URL.Query().Get("path")
+	if dirPath == "" {
+		dirPath = "/home/ubuntu"
+	}
+	if !validateRemotePath(dirPath) {
+		writeError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+
+	output, err := s.mp.ExecInVM(name, []string{"ls", "-la", dirPath})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	entries := parseLsOutput(output)
+	writeJSON(w, http.StatusOK, entries)
+}
+
+// parseLsOutput parses `ls -la` output into file entries.
+func parseLsOutput(output string) []fileEntry {
+	var entries []fileEntry
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "total") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 9 {
+			continue
+		}
+
+		name := strings.Join(fields[8:], " ")
+		if name == "." || name == ".." {
+			continue
+		}
+
+		perms := fields[0]
+		isDir := len(perms) > 0 && perms[0] == 'd'
+		size := fields[4]
+		modified := fields[5] + " " + fields[6] + " " + fields[7]
+
+		entries = append(entries, fileEntry{
+			Name:        name,
+			Size:        size,
+			Permissions: perms,
+			Modified:    modified,
+			IsDir:       isDir,
+		})
+	}
+
+	return entries
+}
+
+type mkdirRequest struct {
+	Path string `json:"path"`
+}
+
+// handleMkdirInVM creates a directory on the VM for use as a mount target or
+// general workspace. Runs via sudo so paths like /mnt/... work — multipass's
+// default user has passwordless sudo, which is the same privilege level the
+// interactive user gets via `multipass shell`.
+func (s *Server) handleMkdirInVM(w http.ResponseWriter, r *http.Request) {
+	name, ok := validVMName(w, r, "name")
+	if !ok {
+		return
+	}
+	var req mkdirRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	if !validateRemotePath(req.Path) {
+		writeError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	if _, err := s.mp.ExecInVM(name, []string{"sudo", "mkdir", "-p", req.Path}); err != nil {
+		if s.eventLog != nil {
+			s.eventLog.EmitEvent("vm", "mkdir", "user", name, "failed", req.Path+": "+err.Error())
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if s.eventLog != nil {
+		s.eventLog.EmitEvent("vm", "mkdir", "user", name, "ok", req.Path)
+	}
+	writeMessage(w, "directory created")
+}
+
+// sanitizeFilename removes characters that could break HTTP headers or enable injection.
+var unsafeFilenameChars = regexp.MustCompile(`["\x00-\x1f\x7f]`)
+
+func sanitizeFilename(name string) string {
+	return unsafeFilenameChars.ReplaceAllString(name, "_")
+}
+
+// validateRemotePath checks that a remote VM path doesn't contain traversal sequences.
+func validateRemotePath(p string) bool {
+	// Reject path traversal attempts
+	if strings.Contains(p, "..") {
+		return false
+	}
+	// Must be absolute
+	if !strings.HasPrefix(p, "/") {
+		return false
+	}
+	return true
+}

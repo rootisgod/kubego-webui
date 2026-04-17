@@ -1,0 +1,100 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/rootisgod/passgo-web/internal/config"
+)
+
+func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
+	s.cfgMu.Lock()
+	profiles := s.cfg.GetProfiles()
+	s.cfgMu.Unlock()
+	writeJSON(w, http.StatusOK, profiles)
+}
+
+func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
+	var p config.Profile
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	s.cfgMu.Lock()
+	err := s.cfg.AddProfile(p)
+	if err != nil {
+		s.cfgMu.Unlock()
+		if err.Error() == "profile with id \""+p.ID+"\" already exists" {
+			writeError(w, http.StatusConflict, err.Error())
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	if saveErr := s.cfg.Save(s.configPath); saveErr != nil {
+		s.cfgMu.Unlock()
+		s.logger.Error("failed to save config", "err", saveErr)
+		writeError(w, http.StatusInternalServerError, "failed to save configuration")
+		return
+	}
+	s.cfgMu.Unlock()
+
+	s.eventLog.EmitHTTPEvent(r, "config", "create_profile", p.Name, "success", "")
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var p config.Profile
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	p.ID = id
+
+	s.cfgMu.Lock()
+	err := s.cfg.UpdateProfile(p)
+	if err != nil {
+		s.cfgMu.Unlock()
+		if err.Error() == "profile \""+id+"\" not found" {
+			writeError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	if saveErr := s.cfg.Save(s.configPath); saveErr != nil {
+		s.cfgMu.Unlock()
+		s.logger.Error("failed to save config", "err", saveErr)
+		writeError(w, http.StatusInternalServerError, "failed to save configuration")
+		return
+	}
+	s.cfgMu.Unlock()
+
+	s.eventLog.EmitHTTPEvent(r, "config", "update_profile", p.Name, "success", "")
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	s.cfgMu.Lock()
+	err := s.cfg.DeleteProfile(id)
+	if err != nil {
+		s.cfgMu.Unlock()
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if saveErr := s.cfg.Save(s.configPath); saveErr != nil {
+		s.cfgMu.Unlock()
+		s.logger.Error("failed to save config", "err", saveErr)
+		writeError(w, http.StatusInternalServerError, "failed to save configuration")
+		return
+	}
+	s.cfgMu.Unlock()
+
+	s.eventLog.EmitHTTPEvent(r, "config", "delete_profile", id, "success", "")
+	writeMessage(w, "profile deleted")
+}
