@@ -12,6 +12,12 @@ import VmLogsTab from './VmLogsTab.vue'
 
 const store = useVmStore()
 const activeTab = ref('summary')
+// Latches true the first time the user visits the console tab for the
+// current VM. Keeps VmConsoleTab mounted after that (via v-show) so the
+// WebSocket stays open and the xterm scrollback survives tab switches,
+// without paying the mount/connect cost for VMs whose console is never
+// opened.
+const consoleEverOpened = ref(false)
 
 const tabs = [
   { id: 'summary', label: 'Summary' },
@@ -24,9 +30,14 @@ const tabs = [
   { id: 'ansible', label: 'Ansible' },
 ]
 
-// Reset tab when VM changes
+// Reset tab + console-open latch when the selected VM changes.
 watch(() => store.selectedNode, () => {
   activeTab.value = 'summary'
+  consoleEverOpened.value = false
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'console') consoleEverOpened.value = true
 })
 </script>
 
@@ -55,9 +66,15 @@ watch(() => store.selectedNode, () => {
     <div class="flex-1 overflow-auto">
       <!-- Ansible tab rendered outside Transition (CodeMirror conflict) -->
       <VmAnsibleTab v-if="activeTab === 'ansible'" :vm-name="store.selectedNode" :key="'ansible-' + store.selectedNode" />
-      <Transition v-else name="fade" mode="out-in">
+      <!-- Console rendered outside Transition and kept mounted (v-show) so
+           the WebSocket and xterm scrollback survive tab switches. -->
+      <VmConsoleTab
+        v-if="consoleEverOpened"
+        v-show="activeTab === 'console'"
+        :key="'console-' + store.selectedNode"
+      />
+      <Transition v-if="activeTab !== 'ansible' && activeTab !== 'console'" name="fade" mode="out-in">
         <VmSummaryTab v-if="activeTab === 'summary'" :key="'summary-' + store.selectedNode" />
-        <VmConsoleTab v-else-if="activeTab === 'console'" :key="'console-' + store.selectedNode" />
         <VmLogsTab v-else-if="activeTab === 'logs'" :key="'logs-' + store.selectedNode" />
         <VmSnapshotsTab v-else-if="activeTab === 'snapshots'" :key="'snap-' + store.selectedNode" />
         <VmDisksTab v-else-if="activeTab === 'disks'" :key="'disks-' + store.selectedNode" />
