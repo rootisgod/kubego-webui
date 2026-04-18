@@ -8,7 +8,8 @@ import ActionButton from '../shared/ActionButton.vue'
 import Sparkline from '../shared/Sparkline.vue'
 import CreateVmModal from '../modals/CreateVmModal.vue'
 import ConfirmModal from '../modals/ConfirmModal.vue'
-import { Plus, Play, Square, Trash2, Server, Activity, Pause, AlertTriangle, X, Loader2, Cpu, MemoryStick, HardDrive, Download } from 'lucide-vue-next'
+import ClusterInfoPanel from './ClusterInfoPanel.vue'
+import { Plus, Play, Square, Server, Activity, AlertTriangle, X, Loader2, Cpu, MemoryStick, HardDrive, Download } from 'lucide-vue-next'
 
 const store = useVmStore()
 const toasts = useToastStore()
@@ -19,13 +20,11 @@ const cards = [
   { label: 'Total', getter: () => store.totalCount, icon: Server, color: 'text-[var(--accent)]' },
   { label: 'Running', getter: () => store.runningCount, icon: Activity, color: 'text-[var(--success)]' },
   { label: 'Stopped', getter: () => store.stoppedCount, icon: Square, color: 'text-[var(--muted)]' },
-  { label: 'Suspended', getter: () => store.suspendedCount, icon: Pause, color: 'text-[var(--warning)]' },
-  { label: 'Deleted', getter: () => store.deletedCount, icon: AlertTriangle, color: 'text-[var(--danger)]' },
 ]
 
-// Host resource metrics
-const hr = computed(() => store.hostResources)
-const metrics = computed(() => getHistory('__host__'))
+// Cluster resource metrics
+const hr = computed(() => store.clusterResources)
+const metrics = computed(() => getHistory('__cluster__'))
 
 const memoryPercent = computed(() => {
   if (!hr.value?.total_memory_mb) return 0
@@ -71,14 +70,6 @@ async function doStopAll() {
   } catch (e) { toasts.error(e.message) }
 }
 
-async function doPurge() {
-  try {
-    await api.purgeDeleted()
-    toasts.success('Deleted VMs purged')
-    store.fetchVMs()
-  } catch (e) { toasts.error(e.message) }
-}
-
 function downloadInventory() {
   window.open('/api/v1/ansible/inventory', '_blank')
 }
@@ -96,7 +87,10 @@ async function executeConfirmed() {
 
 <template>
   <div class="p-6">
-    <h2 class="text-xl font-semibold mb-6">Dashboard</h2>
+    <h2 class="text-xl font-semibold mb-6">Cluster</h2>
+
+    <!-- Cluster metadata + nodes + KVM status -->
+    <ClusterInfoPanel />
 
     <!-- Host Resource Cards -->
     <div v-if="hr" class="grid grid-cols-3 gap-4 mb-6">
@@ -147,7 +141,7 @@ async function executeConfirmed() {
     </div>
 
     <!-- Summary cards -->
-    <div class="grid grid-cols-5 gap-4 mb-8">
+    <div class="grid grid-cols-3 gap-4 mb-8">
       <div
         v-for="card in cards"
         :key="card.label"
@@ -197,7 +191,6 @@ async function executeConfirmed() {
       <ActionButton label="Create VM" :icon="Plus" variant="success" @click="showCreateModal = true" />
       <ActionButton label="Start All" :icon="Play" @click="confirmBulk(doStartAll, 'Start all stopped VMs?')" />
       <ActionButton label="Stop All" :icon="Square" @click="confirmBulk(doStopAll, 'Stop all running VMs?')" />
-      <ActionButton label="Purge Deleted" :icon="Trash2" variant="danger" @click="confirmBulk(doPurge, 'Permanently remove all deleted VMs?')" />
       <ActionButton label="Ansible Inventory" :icon="Download" @click="downloadInventory" />
     </div>
 

@@ -46,12 +46,9 @@ export const getVM = (name) => request('GET', `/vms/${name}`)
 export const createVM = (opts) => request('POST', '/vms', opts)
 export const startVM = (name) => request('POST', `/vms/${name}/start`)
 export const stopVM = (name) => request('POST', `/vms/${name}/stop`)
-export const suspendVM = (name) => request('POST', `/vms/${name}/suspend`)
 export const deleteVM = (name, purge = false) => request('DELETE', `/vms/${name}`, { purge })
-export const recoverVM = (name) => request('POST', `/vms/${name}/recover`)
 export const startAll = () => request('POST', '/vms/start-all')
 export const stopAll = () => request('POST', '/vms/stop-all')
-export const purgeDeleted = () => request('POST', '/vms/purge')
 export const execInVM = (name, command) => request('POST', `/vms/${name}/exec`, { command })
 export const listLaunches = () => request('GET', '/launches')
 export const dismissLaunch = (name) => request('DELETE', `/launches/${encodeURIComponent(name)}`)
@@ -59,7 +56,21 @@ export const cloneVM = (name, destName, snapshot) => request('POST', `/vms/${nam
 export const getCloudInitStatus = (name) => request('GET', `/vms/${name}/cloud-init/status`)
 export const getVMConfig = (name) => request('GET', `/vms/${name}/config`)
 export const resizeVM = (name, config) => request('PUT', `/vms/${name}/config`, config)
-export const getHostResources = () => request('GET', '/host/resources')
+export const getVMEvents = (name) => request('GET', `/vms/${name}/events`)
+
+export async function getVMPodLogs(name, tail = 500) {
+  const res = await fetch(`${API_BASE}/vms/${name}/logs?tail=${tail}`)
+  if (res.status === 401) fireUnauthorized(`/vms/${name}/logs`)
+  if (!res.ok) {
+    const text = await res.text()
+    let msg
+    try { msg = JSON.parse(text).error } catch { msg = text }
+    throw new ApiError(res.status, msg)
+  }
+  return res.text()
+}
+export const getClusterResources = () => request('GET', '/cluster/resources')
+export const getClusterInfo = () => request('GET', '/cluster/info')
 export const getVMDefaults = () => request('GET', '/config/vm-defaults')
 export const updateVMDefaults = (defaults) => request('PUT', '/config/vm-defaults', defaults)
 
@@ -89,11 +100,10 @@ export const createSnapshot = (vmName, name, comment) => request('POST', `/vms/$
 export const restoreSnapshot = (vmName, snap) => request('POST', `/vms/${vmName}/snapshots/${snap}/restore`)
 export const deleteSnapshot = (vmName, snap) => request('DELETE', `/vms/${vmName}/snapshots/${snap}`)
 
-// Mounts
-export const listMounts = (vmName) => request('GET', `/vms/${vmName}/mounts`)
-export const addMount = (vmName, source, target) => request('POST', `/vms/${vmName}/mounts`, { source, target })
-export const removeMount = (vmName, target) => request('DELETE', `/vms/${vmName}/mounts`, { target })
-export const openMountFolder = (vmName, target) => request('POST', `/vms/${vmName}/mounts/open`, { target })
+// Disks (PVC hot-plug; renamed from Mounts)
+export const listDisks = (vmName) => request('GET', `/vms/${vmName}/disks`)
+export const attachDisk = (vmName, opts) => request('POST', `/vms/${vmName}/disks`, opts)
+export const detachDisk = (vmName, name) => request('DELETE', `/vms/${vmName}/disks`, { name })
 
 // System
 export const listImages = () => request('GET', '/images')
@@ -107,8 +117,6 @@ export const getVersion = () => request('GET', '/version')
 
 // File transfer
 export const listFiles = (vmName, path) => request('GET', `/vms/${vmName}/files/ls?path=${encodeURIComponent(path)}`)
-export const listHostFiles = (path) => request('GET', `/host/files/ls${path ? `?path=${encodeURIComponent(path)}` : ''}`)
-export const getHostHome = () => request('GET', '/host/home')
 export const createVmFolder = (vmName, path) => request('POST', `/vms/${vmName}/files/mkdir`, { path })
 
 export async function uploadFile(vmName, destPath, file) {

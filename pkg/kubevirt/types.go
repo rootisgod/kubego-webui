@@ -103,3 +103,53 @@ type ClusterResources struct {
 	TotalDiskMB   int64   `json:"total_disk_mb"`
 	UsedDiskMB    int64   `json:"used_disk_mb"`
 }
+
+// ClusterInfo is the read-only metadata page shown on the cluster
+// dashboard. "KVM status" is derived — a cluster runs at native speed
+// only when every node advertises the kvm device resource AND the
+// KubeVirt CR has not forced software emulation.
+type ClusterInfo struct {
+	Name              string        `json:"name"`
+	Context           string        `json:"context"`
+	Flavor            string        `json:"flavor"` // "kind", "k3s", "generic"
+	APIServer         string        `json:"api_server"`
+	KubernetesVersion string        `json:"kubernetes_version"`
+	Nodes             []NodeInfo    `json:"nodes"`
+	KubeVirt          KubeVirtInfo  `json:"kubevirt"`
+	CDI               *CDIInfo      `json:"cdi,omitempty"`
+	Virtualisation    VirtStatus    `json:"virtualisation"`
+}
+
+type NodeInfo struct {
+	Name             string `json:"name"`
+	Ready            bool   `json:"ready"`
+	Role             string `json:"role"`
+	CPUs             int64  `json:"cpus"`
+	MemoryMB         int64  `json:"memory_mb"`
+	DiskMB           int64  `json:"disk_mb"`
+	KVMCapacity      int64  `json:"kvm_capacity"`
+	OSImage          string `json:"os_image"`
+	KernelVersion    string `json:"kernel_version"`
+	ContainerRuntime string `json:"container_runtime"`
+}
+
+type KubeVirtInfo struct {
+	Installed    bool   `json:"installed"`
+	Version      string `json:"version"`
+	Phase        string `json:"phase"`
+	UseEmulation bool   `json:"use_emulation"`
+}
+
+type CDIInfo struct {
+	Installed bool   `json:"installed"`
+	Version   string `json:"version"`
+	Phase     string `json:"phase"`
+}
+
+// VirtStatus rolls up "is this cluster fast?" into a single signal the
+// UI can colour-code: kvm | emulation | mixed (some nodes advertise
+// kvm, others don't) | none.
+type VirtStatus struct {
+	Mode    string `json:"mode"`    // "kvm" | "emulation" | "mixed" | "unknown"
+	Summary string `json:"summary"` // human-readable explanation
+}

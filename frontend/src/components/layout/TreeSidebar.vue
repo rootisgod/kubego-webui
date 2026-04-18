@@ -8,7 +8,7 @@ import ConfirmModal from '../modals/ConfirmModal.vue'
 import CloneVmModal from '../modals/CloneVmModal.vue'
 import GroupNameModal from '../modals/GroupNameModal.vue'
 import MoveToGroupModal from '../modals/MoveToGroupModal.vue'
-import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Pause, Copy, Trash2, RotateCcw, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell } from 'lucide-vue-next'
+import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle } from 'lucide-vue-next'
 import { ref, computed, markRaw } from 'vue'
 
 const store = useVmStore()
@@ -111,45 +111,35 @@ function openContextMenu(event, vm) {
   store.selectNode(vm.name)
   const isRunning = vm.state === 'Running'
   const isStopped = vm.state === 'Stopped'
-  const isSuspended = vm.state === 'Suspended'
-  const isDeleted = vm.state === 'Deleted'
 
   const items = []
 
-  if (!isRunning && !isDeleted) {
+  if (!isRunning) {
     items.push({ label: 'Start', icon: markRaw(Play), action: () => action(() => api.startVM(vm.name), `${vm.name} started`) })
   }
-  if (isRunning || isSuspended) {
-    items.push({ label: 'Stop', icon: markRaw(Square), action: () => action(() => api.stopVM(vm.name), `${vm.name} stopped`) })
-  }
   if (isRunning) {
-    items.push({ label: 'Suspend', icon: markRaw(Pause), action: () => action(() => api.suspendVM(vm.name), `${vm.name} suspended`) })
+    items.push({ label: 'Stop', icon: markRaw(Square), action: () => action(() => api.stopVM(vm.name), `${vm.name} stopped`) })
   }
   if (isStopped) {
     items.push({ label: 'Clone', icon: markRaw(Copy), action: () => { cloneVmName.value = vm.name } })
   }
-  if (isDeleted) {
-    items.push({ label: 'Recover', icon: markRaw(RotateCcw), action: () => action(() => api.recoverVM(vm.name), `${vm.name} recovered`) })
-  }
 
   // Move to group
-  if (!isDeleted && store.groups.length > 0) {
+  if (store.groups.length > 0) {
     items.push({ separator: true })
     items.push({ label: 'Move to Group...', icon: markRaw(ArrowRight), action: () => { moveToGroupVm.value = vm.name } })
   }
 
-  if (!isDeleted) {
-    if (store.groups.length === 0) items.push({ separator: true })
-    items.push({
-      label: 'Delete', icon: markRaw(Trash2), variant: 'danger',
-      action: () => {
-        confirmAction.value = {
-          message: `Delete VM '${vm.name}'?`,
-          fn: () => action(() => api.deleteVM(vm.name), `${vm.name} deleted`),
-        }
-      },
-    })
-  }
+  if (store.groups.length === 0) items.push({ separator: true })
+  items.push({
+    label: 'Delete', icon: markRaw(Trash2), variant: 'danger',
+    action: () => {
+      confirmAction.value = {
+        message: `Delete VM '${vm.name}'?`,
+        fn: () => action(() => api.deleteVM(vm.name), `${vm.name} deleted`),
+      }
+    },
+  })
 
   contextMenu.value = { x: event.clientX, y: event.clientY, items }
 }
@@ -389,7 +379,7 @@ async function executeConfirmed() {
 
       <hr class="my-1.5 border-[var(--border)]" />
 
-      <!-- Host node -->
+      <!-- Cluster node (root of VM tree) -->
       <div
         class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
         :class="store.selectedNode === null ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)]'"
@@ -403,8 +393,18 @@ async function executeConfirmed() {
           <ChevronDown v-if="expanded" class="w-3 h-3" />
           <ChevronRight v-else class="w-3 h-3" />
         </button>
-        <Monitor class="w-4 h-4" />
+        <Box class="w-4 h-4 text-[var(--accent)]" />
         <span class="text-sm font-medium truncate flex-1">{{ store.hostname }}</span>
+        <Zap
+          v-if="store.clusterInfo?.virtualisation?.mode === 'kvm'"
+          class="w-3 h-3 text-[var(--success)] flex-shrink-0"
+          :title="store.clusterInfo.virtualisation.summary"
+        />
+        <AlertTriangle
+          v-else-if="store.clusterInfo?.virtualisation?.mode === 'emulation' || store.clusterInfo?.virtualisation?.mode === 'mixed'"
+          class="w-3 h-3 text-[var(--warning)] flex-shrink-0"
+          :title="store.clusterInfo?.virtualisation?.summary"
+        />
         <button
           v-if="store.vms.length > 0"
           class="w-4 h-4 flex items-center justify-center transition-colors"

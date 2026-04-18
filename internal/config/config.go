@@ -366,9 +366,9 @@ func (c *Config) DeleteWebhook(id string) error {
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".passgo-web/config.json"
+		return ".kubego/config.json"
 	}
-	return filepath.Join(home, ".passgo-web", "config.json")
+	return filepath.Join(home, ".kubego", "config.json")
 }
 
 func Load(path string) (*Config, error) {
@@ -385,7 +385,7 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.CloudInitDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
-			cfg.CloudInitDir = filepath.Join(home, ".passgo-web", "cloud-init")
+			cfg.CloudInitDir = filepath.Join(home, ".kubego", "cloud-init")
 		}
 	}
 	if cfg.Username == "" {
@@ -408,7 +408,7 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.PlaybooksDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
-			cfg.PlaybooksDir = filepath.Join(home, ".passgo-web", "playbooks")
+			cfg.PlaybooksDir = filepath.Join(home, ".kubego", "playbooks")
 		}
 	}
 	if cfg.VMDefaults == nil {
@@ -474,7 +474,7 @@ func (c *Config) Save(path string) error {
 
 func CreateDefault(path string) (*Config, error) {
 	home, _ := os.UserHomeDir()
-	cloudInitDir := filepath.Join(home, ".passgo-web", "cloud-init")
+	cloudInitDir := filepath.Join(home, ".kubego", "cloud-init")
 
 	hashed, err := HashPassword("admin")
 	if err != nil {

@@ -76,6 +76,15 @@ func (s *Server) handleClusterResources(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (s *Server) handleClusterInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := s.kv.ClusterInfo()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 func (s *Server) handleGetVMDefaults(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.cfg.VMDefaults)
 }

@@ -4,10 +4,11 @@ import { useVmStore } from '../../stores/vmStore.js'
 import VmSummaryTab from './VmSummaryTab.vue'
 import VmConsoleTab from './VmConsoleTab.vue'
 import VmSnapshotsTab from './VmSnapshotsTab.vue'
-import VmMountsTab from './VmMountsTab.vue'
+import VmDisksTab from './VmDisksTab.vue'
 import VmTransferTab from './VmTransferTab.vue'
 import VmConfigTab from './VmConfigTab.vue'
 import VmAnsibleTab from './VmAnsibleTab.vue'
+import VmLogsTab from './VmLogsTab.vue'
 
 const store = useVmStore()
 const activeTab = ref('summary')
@@ -15,8 +16,9 @@ const activeTab = ref('summary')
 const tabs = [
   { id: 'summary', label: 'Summary' },
   { id: 'console', label: 'Console' },
+  { id: 'logs', label: 'Logs' },
   { id: 'snapshots', label: 'Snapshots' },
-  { id: 'mounts', label: 'Mounts' },
+  { id: 'disks', label: 'Disks' },
   { id: 'files', label: 'Files' },
   { id: 'config', label: 'Config' },
   { id: 'ansible', label: 'Ansible' },
@@ -56,8 +58,9 @@ watch(() => store.selectedNode, () => {
       <Transition v-else name="fade" mode="out-in">
         <VmSummaryTab v-if="activeTab === 'summary'" :key="'summary-' + store.selectedNode" />
         <VmConsoleTab v-else-if="activeTab === 'console'" :key="'console-' + store.selectedNode" />
+        <VmLogsTab v-else-if="activeTab === 'logs'" :key="'logs-' + store.selectedNode" />
         <VmSnapshotsTab v-else-if="activeTab === 'snapshots'" :key="'snap-' + store.selectedNode" />
-        <VmMountsTab v-else-if="activeTab === 'mounts'" :key="'mounts-' + store.selectedNode" />
+        <VmDisksTab v-else-if="activeTab === 'disks'" :key="'disks-' + store.selectedNode" />
         <VmTransferTab v-else-if="activeTab === 'files'" :key="'files-' + store.selectedNode" />
         <VmConfigTab v-else-if="activeTab === 'config'" :key="'config-' + store.selectedNode" />
       </Transition>

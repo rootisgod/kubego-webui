@@ -1,0 +1,15 @@
+#cloud-config
+
+# Sets the default `ubuntu` user's password to `ubuntu` so the serial
+# console login (visible in the Console tab) actually lets you in.
+# Use only for throwaway dev VMs — a known password on the console is
+# the least-secure thing you can do.
+
+chpasswd:
+  expire: false
+  users:
+    - name: ubuntu
+      password: ubuntu
+      type: text
+
+ssh_pwauth: true

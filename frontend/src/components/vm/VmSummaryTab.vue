@@ -10,7 +10,7 @@ import Sparkline from '../shared/Sparkline.vue'
 import ConfirmModal from '../modals/ConfirmModal.vue'
 import CloudInitStatus from './CloudInitStatus.vue'
 import CloneVmModal from '../modals/CloneVmModal.vue'
-import { Play, Square, Pause, Copy, Trash2, RotateCcw, Cpu, MemoryStick, HardDrive, Download, Key } from 'lucide-vue-next'
+import { Play, Square, Copy, Trash2, Cpu, MemoryStick, HardDrive, Download, Key } from 'lucide-vue-next'
 
 const store = useVmStore()
 const toasts = useToastStore()
@@ -22,8 +22,8 @@ const vm = computed(() => store.selectedVm)
 const stateColors = {
   Running: 'bg-green-900/30 text-[var(--success)] border-green-800',
   Stopped: 'bg-gray-800/30 text-[var(--muted)] border-gray-700',
-  Suspended: 'bg-yellow-900/30 text-[var(--warning)] border-yellow-800',
-  Deleted: 'bg-red-900/30 text-[var(--danger)] border-red-800',
+  Starting: 'bg-blue-900/30 text-[var(--accent)] border-blue-800',
+  Provisioning: 'bg-blue-900/30 text-[var(--accent)] border-blue-800',
   Creating: 'bg-blue-900/30 text-[var(--accent)] border-blue-800',
 }
 
@@ -68,7 +68,7 @@ const properties = computed(() => {
     { label: 'Image', value: v.image_hash ? v.image_hash.substring(0, 12) : '—' },
     { label: 'CPUs', value: v.cpus || '—' },
     { label: 'Snapshots', value: String(v.snapshots ?? 0) },
-    { label: 'Mounts', value: String(v.mounts?.length ?? 0) },
+    { label: 'Disks', value: String(v.disks?.length ?? v.mounts?.length ?? 0) },
   ]
 })
 
@@ -123,8 +123,6 @@ const metrics = computed(() => vm.value ? getHistory(vm.value.name) : { cpu: [],
 
 const isRunning = computed(() => vm.value?.state === 'Running')
 const isStopped = computed(() => vm.value?.state === 'Stopped')
-const isSuspended = computed(() => vm.value?.state === 'Suspended')
-const isDeleted = computed(() => vm.value?.state === 'Deleted')
 </script>
 
 <template>
@@ -211,20 +209,14 @@ const isDeleted = computed(() => vm.value?.state === 'Deleted')
             label="Start"
             :icon="Play"
             variant="success"
-            :disabled="isRunning || isDeleted"
+            :disabled="isRunning"
             @click="action(() => api.startVM(vm.name), `${vm.name} started`)"
           />
           <ActionButton
             label="Stop"
             :icon="Square"
-            :disabled="isStopped || isDeleted"
+            :disabled="isStopped"
             @click="action(() => api.stopVM(vm.name), `${vm.name} stopped`)"
-          />
-          <ActionButton
-            label="Suspend"
-            :icon="Pause"
-            :disabled="!isRunning"
-            @click="action(() => api.suspendVM(vm.name), `${vm.name} suspended`)"
           />
           <ActionButton
             label="Clone"
@@ -236,18 +228,10 @@ const isDeleted = computed(() => vm.value?.state === 'Deleted')
             label="Delete"
             :icon="Trash2"
             variant="danger"
-            :disabled="isDeleted"
             @click="confirmDanger(
               () => action(() => api.deleteVM(vm.name), `${vm.name} deleted`),
               `Delete VM '${vm.name}'?`
             )"
-          />
-          <ActionButton
-            v-if="isDeleted"
-            label="Recover"
-            :icon="RotateCcw"
-            variant="success"
-            @click="action(() => api.recoverVM(vm.name), `${vm.name} recovered`)"
           />
         </div>
       </div>

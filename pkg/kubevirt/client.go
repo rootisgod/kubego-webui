@@ -87,8 +87,16 @@ type Client interface {
 	TransferFromVM(vmName, remotePath string, w io.Writer) error
 	TransferToVM(vmName, remotePath string, r io.Reader) error
 
+	// Subresources
+	Console(ctx context.Context, vmName string) (io.ReadWriteCloser, error)
+
+	// Observability
+	VMEvents(vmName string) ([]EventInfo, error)
+	VMPodLogs(ctx context.Context, vmName string, tailLines int64, follow bool) (io.ReadCloser, error)
+
 	// Cluster-level metrics (replaces PassGo's per-host resource call)
 	ClusterResources() (ClusterResources, error)
+	ClusterInfo() (ClusterInfo, error)
 
 	// Lifecycle / health
 	ProbeKubeVirt(ctx context.Context) error
@@ -135,11 +143,12 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 	)
 
 	stub := &unimplementedClient{
-		logger:    logger,
-		restCfg:   restCfg,
-		kube:      kubeClient,
-		discovery: discovery,
-		namespace: ns,
+		logger:      logger,
+		restCfg:     restCfg,
+		kube:        kubeClient,
+		discovery:   discovery,
+		namespace:   ns,
+		kubeContext: currentContextName(cfg.Kubeconfig),
 	}
 	return &kubevirtClient{
 		unimplementedClient: stub,
@@ -179,6 +188,21 @@ func loadRestConfig(kubeconfig string) (*rest.Config, string, error) {
 		source = "kubeconfig:" + filepath.Join(home, ".kube", "config")
 	}
 	return c, source, nil
+}
+
+// currentContextName returns the active kubeconfig context name, or
+// empty when running in-cluster. Best-effort: any loading error
+// returns empty, since this is purely for display in ClusterInfo.
+func currentContextName(kubeconfig string) string {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loadingRules.ExplicitPath = kubeconfig
+	}
+	raw, err := loadingRules.Load()
+	if err != nil {
+		return ""
+	}
+	return raw.CurrentContext
 }
 
 // inferNamespace returns the default namespace from:

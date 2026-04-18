@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { listVMs, listLaunches, listGroups, listProfiles, dismissLaunch, getHostResources } from '../api/client.js'
+import { listVMs, listLaunches, listGroups, listProfiles, dismissLaunch, getClusterResources, getClusterInfo } from '../api/client.js'
 import { recordMetrics } from '../composables/useMetricsHistory.js'
 
 export const useVmStore = defineStore('vms', {
@@ -12,8 +12,9 @@ export const useVmStore = defineStore('vms', {
     lastRefresh: null,
     loading: false,
     error: null,
-    hostname: 'localhost',
-    hostResources: null,  // { total_cpus, load_avg_1, ..., total_memory_mb, used_memory_mb, total_disk_mb, used_disk_mb }
+    hostname: 'cluster',
+    clusterResources: null,  // { total_cpus, load_avg_1, ..., total_memory_mb, used_memory_mb, total_disk_mb, used_disk_mb }
+    clusterInfo: null,  // { name, context, flavor, api_server, kubernetes_version, nodes[], kubevirt{}, cdi{}, virtualisation{} }
     // Groups
     groups: [],           // ordered list of group names
     vmGroups: {},         // {vmName: groupName}
@@ -26,8 +27,6 @@ export const useVmStore = defineStore('vms', {
     selectedVm: (state) => state.vms.find(vm => vm.name === state.selectedNode),
     runningCount: (state) => state.vms.filter(vm => vm.state === 'Running').length,
     stoppedCount: (state) => state.vms.filter(vm => vm.state === 'Stopped').length,
-    suspendedCount: (state) => state.vms.filter(vm => vm.state === 'Suspended').length,
-    deletedCount: (state) => state.vms.filter(vm => vm.state === 'Deleted').length,
     totalCount: (state) => state.vms.length,
     // Only show launches for VMs not yet in the real VM list
     activeLaunches: (state) => {
@@ -58,11 +57,16 @@ export const useVmStore = defineStore('vms', {
       try {
         this.loading = true
         this.error = null
-        const [data, launchData, hostData] = await Promise.all([
+        const [data, launchData, clusterData, clusterMeta] = await Promise.all([
           listVMs(),
           listLaunches().catch(() => []),
-          getHostResources().catch(() => null),
+          getClusterResources().catch(() => null),
+          getClusterInfo().catch(() => null),
         ])
+        if (clusterMeta) {
+          this.clusterInfo = clusterMeta
+          this.hostname = clusterMeta.name || 'cluster'
+        }
         const launches = Array.isArray(launchData) ? launchData : []
         const launchingNames = new Set(launches.filter(l => l.status === 'launching').map(l => l.name))
         const vms = Array.isArray(data) ? data : []
@@ -90,12 +94,12 @@ export const useVmStore = defineStore('vms', {
         // Refresh groups and profiles alongside VMs
         await Promise.all([this.fetchGroups(), this.fetchProfiles()])
 
-        // Record host resource metrics
-        if (hostData) {
-          this.hostResources = hostData
-          const memPct = hostData.total_memory_mb ? (hostData.used_memory_mb / hostData.total_memory_mb) * 100 : 0
-          const diskPct = hostData.total_disk_mb ? (hostData.used_disk_mb / hostData.total_disk_mb) * 100 : 0
-          recordMetrics('__host__', { cpu: hostData.load_avg_1 || 0, memory: memPct, disk: diskPct })
+        // Record cluster resource metrics
+        if (clusterData) {
+          this.clusterResources = clusterData
+          const memPct = clusterData.total_memory_mb ? (clusterData.used_memory_mb / clusterData.total_memory_mb) * 100 : 0
+          const diskPct = clusterData.total_disk_mb ? (clusterData.used_disk_mb / clusterData.total_disk_mb) * 100 : 0
+          recordMetrics('__cluster__', { cpu: clusterData.load_avg_1 || 0, memory: memPct, disk: diskPct })
         }
       } catch (err) {
         // 401 is handled centrally via the 'passgo:unauthorized' event in App.vue.

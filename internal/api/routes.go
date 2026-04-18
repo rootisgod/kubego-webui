@@ -34,6 +34,7 @@ type Server struct {
 	loginLimiter  *loginRateLimiter
 	apiLimiter    *apiRateLimiter
 	eventLog      *EventLog
+	shells        *shellSessionStore
 }
 
 func NewServer(kv kubevirt.Client, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
@@ -50,6 +51,7 @@ func NewServer(kv kubevirt.Client, cfg *config.Config, configPath string, logger
 		sessions:           newSessionStore(24 * time.Hour),
 		loginLimiter:       newLoginRateLimiter(5, time.Minute),
 		apiLimiter:         newAPIRateLimiter(30, time.Minute, cfg.TrustProxy),
+		shells:             newShellSessionStore(),
 	}
 	s.ansibleRunner.startFunc = s.startPlaybookRun
 	s.scheduler = newScheduler(s)
@@ -141,6 +143,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	// System
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)
 	mux.HandleFunc("GET /api/v1/cluster/resources", s.handleClusterResources)
+	mux.HandleFunc("GET /api/v1/cluster/info", s.handleClusterInfo)
 	mux.HandleFunc("GET /api/v1/config/vm-defaults", s.handleGetVMDefaults)
 	mux.HandleFunc("PUT /api/v1/config/vm-defaults", s.handleUpdateVMDefaults)
 	mux.HandleFunc("GET /api/v1/config/export", s.handleExportConfig)
@@ -211,9 +214,19 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("PUT /api/v1/chat/config", s.handleUpdateChatConfig)
 	mux.HandleFunc("GET /api/v1/chat/models", s.handleListModels)
 
-	// Shell sessions are M2 — backend SerialConsole proxy to virt-api.
-	// Not registered until that milestone; frontend hides the Shell tab
-	// when the list-sessions endpoint 404s.
+	// Logs (K8s events + virt-launcher pod logs). Useful during creation
+	// — events surface scheduling/image-pull/start; pod logs surface
+	// QEMU start and cloud-init early output.
+	mux.HandleFunc("GET /api/v1/vms/{name}/events", s.handleListVMEvents)
+	mux.HandleFunc("GET /api/v1/vms/{name}/logs", s.handleGetVMPodLogs)
+
+	// Shell (serial console). Proxies browser xterm.js to virt-api's
+	// subresources.kubevirt.io/.../console WebSocket. See
+	// handlers_console.go for the resize-frame filter.
+	mux.HandleFunc("POST /api/v1/vms/{name}/shell/sessions", s.handleCreateShellSession)
+	mux.HandleFunc("GET /api/v1/vms/{name}/shell/sessions", s.handleListShellSessions)
+	mux.HandleFunc("DELETE /api/v1/vms/{name}/shell/sessions/{sessionId}", s.handleDeleteShellSession)
+	mux.HandleFunc("GET /api/v1/vms/{name}/shell/{sessionId}", s.handleShellWS)
 
 	// Static frontend
 	if staticFS != nil {

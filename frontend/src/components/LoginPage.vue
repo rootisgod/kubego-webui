@@ -30,7 +30,7 @@ async function handleLogin() {
     <form @submit.prevent="handleLogin" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" class="w-80 p-6 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)]">
       <div class="flex items-center justify-center gap-3 mb-6">
         <Server class="w-6 h-6 text-[var(--accent)]" />
-        <span class="text-xl font-semibold">PassGo Web</span>
+        <span class="text-xl font-semibold">KubeGo</span>
       </div>
 
       <div v-if="error" class="mb-4 p-2 rounded text-sm bg-red-900/30 text-red-300 border border-red-800">

@@ -26,6 +26,10 @@ type unimplementedClient struct {
 	kube      *kubernetes.Clientset
 	discovery *discovery.DiscoveryClient
 	namespace string
+	// kubeContext is the kubeconfig context name (e.g. "kind-kubego-dev")
+	// when NewClient loaded from a kubeconfig, empty otherwise.
+	// Used by ClusterInfo to name the cluster; not for any routing/auth.
+	kubeContext string
 }
 
 func (c *unimplementedClient) Namespace() string { return c.namespace }
@@ -177,10 +181,28 @@ func (c *unimplementedClient) TransferToVM(string, string, io.Reader) error {
 	return ErrNotImplemented
 }
 
+// ----- subresources -----
+
+func (c *unimplementedClient) Console(context.Context, string) (io.ReadWriteCloser, error) {
+	return nil, ErrNotImplemented
+}
+
+// ----- observability -----
+
+func (c *unimplementedClient) VMEvents(string) ([]EventInfo, error) {
+	return nil, ErrNotImplemented
+}
+func (c *unimplementedClient) VMPodLogs(context.Context, string, int64, bool) (io.ReadCloser, error) {
+	return nil, ErrNotImplemented
+}
+
 // ----- cluster -----
 
 func (c *unimplementedClient) ClusterResources() (ClusterResources, error) {
 	return ClusterResources{}, ErrNotImplemented
+}
+func (c *unimplementedClient) ClusterInfo() (ClusterInfo, error) {
+	return ClusterInfo{}, ErrNotImplemented
 }
 
 // Compile-time interface check.
