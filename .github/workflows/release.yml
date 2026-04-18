@@ -86,7 +86,7 @@ jobs:
           for platform in "${platforms[@]}"; do
             goos="${platform%/*}"
             goarch="${platform#*/}"
-            binary_name="passgo-web-${goos}-${goarch}"
+            binary_name="kubego-${goos}-${goarch}"
             if [ "$goos" = "windows" ]; then
               binary_name="${binary_name}.exe"
             fi
@@ -110,7 +110,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: binaries
-          path: passgo-web-*
+          path: kubego-*
           retention-days: 30
 
   release:
@@ -132,7 +132,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd release
-          for file in passgo-web-*; do
+          for file in kubego-*; do
             sha256sum "$file" > "$file.sha256"
           done
 
@@ -145,7 +145,7 @@ jobs:
           tag_name: v0.${{ github.run_number }}
           name: Release v0.${{ github.run_number }}
           body: |
-            ## PassGo Web v0.${{ github.run_number }}
+            ## KubeGo v0.${{ github.run_number }}
 
             Automated build from commit ${{ github.sha }}.
 
@@ -153,16 +153,16 @@ jobs:
 
             | Platform | Binary |
             |----------|--------|
-            | Linux x86_64 | `passgo-web-linux-amd64` |
-            | Linux ARM64 | `passgo-web-linux-arm64` |
-            | macOS Intel | `passgo-web-darwin-amd64` |
-            | macOS Apple Silicon | `passgo-web-darwin-arm64` |
-            | Windows x86_64 | `passgo-web-windows-amd64.exe` |
+            | Linux x86_64 | `kubego-linux-amd64` |
+            | Linux ARM64 | `kubego-linux-arm64` |
+            | macOS Intel | `kubego-darwin-amd64` |
+            | macOS Apple Silicon | `kubego-darwin-arm64` |
+            | Windows x86_64 | `kubego-windows-amd64.exe` |
 
             ### Verify download
 
             ```bash
-            sha256sum -c passgo-web-linux-amd64.sha256
+            sha256sum -c kubego-linux-amd64.sha256
             ```
           files: release/*
           draft: false
