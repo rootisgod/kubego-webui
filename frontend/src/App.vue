@@ -77,7 +77,7 @@ usePolling(() => {
       <AppHeader />
       <div class="flex flex-1 overflow-hidden">
         <TreeSidebar />
-        <main class="flex-1 overflow-auto">
+        <main class="flex-1 overflow-auto relative">
           <CloudInitPanel v-if="store.selectedNode === '__cloud-init__'" />
           <AnsiblePanel v-else-if="store.selectedNode === '__ansible__'" />
           <ProfilesPanel v-else-if="store.selectedNode === '__profiles__'" />
@@ -86,12 +86,22 @@ usePolling(() => {
           <ApiTokensPanel v-else-if="store.selectedNode === '__api-tokens__'" />
           <EventLogPanel v-else-if="store.selectedNode === '__events__'" />
           <MachineCheckPanel v-else-if="store.selectedNode === '__machine-check__'" />
-          <K9sPanel v-else-if="store.selectedNode === '__k9s__'" />
+          <!-- K9s branch renders nothing here; the panel itself is
+               always-mounted below (see v-show) so its PTYs survive. -->
+          <template v-else-if="store.selectedNode === '__k9s__'" />
           <SettingsPanel v-else-if="store.selectedNode === '__settings__'" />
           <Transition v-else name="fade" mode="out-in">
             <HostPanel v-if="store.selectedNode === null" key="host" />
             <VmDetailPanel v-else :key="store.selectedNode" />
           </Transition>
+          <!-- Always-mounted so k9s sessions + WebSockets survive the
+               user clicking away to a VM and back. v-show hides via
+               display:none; hidden children must still guard against
+               zero-size resize (see K9sTerminal). -->
+          <K9sPanel
+            v-show="store.selectedNode === '__k9s__'"
+            class="absolute inset-0"
+          />
         </main>
         <ChatPanel />
       </div>

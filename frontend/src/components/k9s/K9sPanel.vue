@@ -24,6 +24,12 @@ let tabCounter = 0
 const inClusterMode = computed(() => store.inClusterMode)
 const noActiveCluster = computed(() => !store.activeContext)
 
+// Panel is "active" when the user has selected the k9s sidebar entry.
+// The component stays mounted either way (see App.vue v-show) so tabs
+// and their WebSockets survive navigation — isActive just tells us
+// whether to focus/auto-spawn.
+const isActive = computed(() => store.selectedNode === '__k9s__')
+
 async function checkAvailability() {
   loading.value = true
   try {
@@ -84,16 +90,44 @@ async function doInstall() {
   }
 }
 
+// Single guard for concurrent spawn attempts — both the cluster-switch
+// handler and the auto-spawn watch can race on the same empty-tabs
+// state.
+let spawning = false
+async function tryAutoSpawn() {
+  if (spawning) return
+  if (!isActive.value || loading.value) return
+  if (tabs.value.length > 0) return
+  if (!k9sAvailable.value || inClusterMode.value || noActiveCluster.value) return
+  spawning = true
+  try {
+    await addTab()
+  } finally {
+    spawning = false
+  }
+}
+
+// Auto-spawn triggers: user navigates to k9s, availability check
+// resolves, or k9s gets installed. Deliberately NOT watching
+// tabs.length — a user who clicks the X on their last tab should not
+// have one respawn at them.
+watch([isActive, loading, k9sAvailable], () => {
+  tryAutoSpawn()
+}, { immediate: true })
+
 // Close all sessions when the active cluster changes — k9s was spawned
 // against the previous context and any further navigation would be
-// against the wrong cluster. The sidebar now makes k9s visually
-// cluster-scoped (it sits under the switcher, alongside the VM tree),
-// so "switch cluster = fresh k9s" is expected.
+// against the wrong cluster. The sidebar makes this cluster-scoping
+// visible (k9s sits under the switcher, alongside the VM tree), so
+// "switch cluster = fresh k9s" is expected. If the user is still
+// looking at the panel, auto-spawn a replacement for the new cluster
+// instead of dropping them at the empty state.
 watch(() => store.activeContext, async (_, prev) => {
   if (prev === undefined) return // initial load
   for (const t of [...tabs.value]) {
     await closeTab(t.sessionId)
   }
+  if (isActive.value) await tryAutoSpawn()
 })
 
 onMounted(checkAvailability)

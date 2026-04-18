@@ -78,8 +78,14 @@ function reconnect() {
 
 function setupResizeObserver() {
   if (resizeObserver) return
-  resizeObserver = new ResizeObserver(() => {
-    if (fitAddon && props.active) fitAddon.fit()
+  resizeObserver = new ResizeObserver((entries) => {
+    if (!fitAddon || !props.active) return
+    // When the K9sPanel is hidden via display:none (user navigated to
+    // a VM and back), contentRect is 0×0 — fitting then would send a
+    // zero-size resize to the PTY and the redraw on return is blank.
+    const rect = entries[0]?.contentRect
+    if (!rect || rect.width < 10 || rect.height < 10) return
+    fitAddon.fit()
   })
   if (termRef.value) {
     resizeObserver.observe(termRef.value)
