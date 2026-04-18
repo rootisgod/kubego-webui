@@ -42,6 +42,9 @@ export const useVmStore = defineStore('vms', {
     failedLaunches: (state) => state.launches.filter(l => l.status === 'failed'),
     selectedVmObjects: (state) => state.vms.filter(vm => state.selectedVms.includes(vm.name)),
     ungroupedVms: (state) => state.vms.filter(vm => !state.vmGroups[vm.name]),
+    activeCluster: (state) => state.clusters.find(c => c.context === state.activeContext) || null,
+    activeClusterColor() { return this.activeCluster?.color || '' },
+    activeClusterTag() { return this.activeCluster?.tag || '' },
   },
 
   actions: {

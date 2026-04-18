@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rootisgod/kubego-webui/internal/config"
+	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
 
 // kindNameRe restricts `kind create cluster --name <N>` input to the
@@ -31,12 +34,53 @@ func (s *Server) handleListClusters(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Decorate each context with user-chosen tag + color so the sidebar
+	// can render the tabstrip without a second round-trip.
+	type decorated struct {
+		kubevirt.ContextInfo
+		Tag   string `json:"tag,omitempty"`
+		Color string `json:"color,omitempty"`
+	}
+	out := make([]decorated, 0, len(ctxs))
+	for _, c := range ctxs {
+		meta := s.cfg.GetClusterMeta(c.Name)
+		out = append(out, decorated{ContextInfo: c, Tag: meta.Tag, Color: meta.Color})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"contexts":       ctxs,
+		"contexts":       out,
 		"active":         s.clusters.ActiveContext(),
 		"in_cluster":     s.clusters.InCluster(),
 		"kind_available": kindAvailable(),
 	})
+}
+
+type clusterMetadataRequest struct {
+	Tag   string `json:"tag"`
+	Color string `json:"color"`
+}
+
+// handleSetClusterMetadata writes the tag+color for a context into the
+// persisted config. Missing context name → 400; unknown context is
+// still accepted so the user can tag a cluster they're about to
+// create or that lives in another kubeconfig file.
+func (s *Server) handleSetClusterMetadata(w http.ResponseWriter, r *http.Request) {
+	ctx := r.PathValue("context")
+	if ctx == "" {
+		writeError(w, http.StatusBadRequest, "context is required")
+		return
+	}
+	var req clusterMetadataRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	meta := config.ClusterMeta{Tag: req.Tag, Color: req.Color}
+	s.cfg.SetClusterMeta(ctx, meta)
+	if err := s.cfg.Save(s.configPath); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"context": ctx, "tag": meta.Tag, "color": meta.Color})
 }
 
 type selectClusterRequest struct {

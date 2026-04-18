@@ -393,8 +393,17 @@ async function executeConfirmed() {
 
       <hr class="my-1.5 border-[var(--border)]" />
 
-      <!-- Cluster switcher anchors the cluster-scoped section: everything
-           below this line (k9s, the VM tree) follows the active context. -->
+      <!-- Cluster-scoped region: everything below follows the active
+           context. The left-edge stripe uses the active cluster's chosen
+           colour so dev/staging/prod stay visually distinct at a
+           glance — a weak guard against fat-fingering a destructive
+           action on the wrong environment. -->
+      <div
+        class="pl-1 -ml-0.5 transition-colors"
+        :style="store.activeClusterColor ? { borderLeft: `3px solid ${store.activeClusterColor}` } : { borderLeft: '3px solid transparent' }"
+      >
+
+      <!-- Cluster switcher anchors the cluster-scoped section. -->
       <ClusterSwitcher />
 
       <!-- Cluster node (root of VM tree) -->
@@ -552,6 +561,7 @@ async function executeConfirmed() {
       <div v-if="store.vms.length === 0 && store.launchingCount === 0 && expanded" class="ml-8 py-2 text-xs text-[var(--text-secondary)]">
         No VMs
       </div>
+      </div><!-- /cluster-scoped region -->
     </div>
 
     <ContextMenu

@@ -155,6 +155,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/v1/clusters/select", s.handleSelectCluster)
 	mux.HandleFunc("POST /api/v1/clusters/kind", s.handleKindCreate)
 	mux.HandleFunc("DELETE /api/v1/clusters/kind/{name}", s.handleKindDelete)
+	mux.HandleFunc("PUT /api/v1/clusters/{context}/metadata", s.handleSetClusterMetadata)
 
 	// Host machine check (external tools + kernel sysctls).
 	mux.HandleFunc("GET /api/v1/host/check", s.handleHostCheck)

@@ -1,37 +1,32 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { useVmStore } from '../../stores/vmStore.js'
 import { useToastStore } from '../../stores/toastStore.js'
 import * as api from '../../api/client.js'
-import { ChevronDown, Plus, Trash2, Check, Server } from 'lucide-vue-next'
+import { Plus, Trash2, Settings as SettingsIcon } from 'lucide-vue-next'
 import ConfirmModal from '../modals/ConfirmModal.vue'
 import KindCreateModal from '../modals/KindCreateModal.vue'
 import KindProgressModal from '../modals/KindProgressModal.vue'
+import ClusterEditModal from '../modals/ClusterEditModal.vue'
 
 const store = useVmStore()
 const toasts = useToastStore()
 
-const open = ref(false)
-const rootRef = ref(null)
 const createPrompt = ref(false)
-const confirmDelete = ref(null) // { name }
+const confirmDelete = ref(null) // { context, name }
 const progress = ref(null)      // { title, status, lines, errorMessage }
+const editing = ref(null)       // cluster object being edited
 
-const activeLabel = computed(() => store.activeContext || 'no cluster')
 const canManageKind = computed(() => store.kindAvailable && !store.inClusterMode)
 
-function close() { open.value = false }
-
-function onDocClick(e) {
-  if (!rootRef.value) return
-  if (!rootRef.value.contains(e.target)) close()
+// Strip the `kind-` prefix for display — context names get noisy fast
+// when half your list looks like `kind-dev / kind-staging / kind-prod`.
+// Hover/aria still carries the full context name.
+function displayName(c) {
+  return c.context?.startsWith('kind-') ? c.context.slice(5) : c.context
 }
 
-onMounted(() => document.addEventListener('click', onDocClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
-
 async function switchTo(ctx) {
-  close()
   if (ctx === store.activeContext) return
   try {
     await api.selectCluster(ctx)
@@ -43,7 +38,6 @@ async function switchTo(ctx) {
 }
 
 function askCreateKind() {
-  close()
   createPrompt.value = true
 }
 
@@ -68,11 +62,9 @@ async function doCreateKind(name) {
   }
 }
 
-function askDeleteKind(ctx) {
-  close()
-  // The kind cluster name is the context minus the "kind-" prefix.
-  const name = ctx.startsWith('kind-') ? ctx.slice(5) : ctx
-  confirmDelete.value = { context: ctx, name }
+function askDeleteKind(c) {
+  const name = c.context.startsWith('kind-') ? c.context.slice(5) : c.context
+  confirmDelete.value = { context: c.context, name }
 }
 
 async function doDeleteKind() {
@@ -96,60 +88,95 @@ async function doDeleteKind() {
     progress.value.errorMessage = e.message
   }
 }
+
+function openEdit(c) {
+  editing.value = { context: c.context, tag: c.tag || '', color: c.color || '' }
+}
+
+async function saveEdit({ tag, color }) {
+  const ctx = editing.value.context
+  editing.value = null
+  try {
+    await api.setClusterMetadata(ctx, { tag, color })
+    toasts.success(`Updated "${ctx}"`)
+    await store.fetchClusters()
+  } catch (e) {
+    toasts.error(e.message)
+  }
+}
 </script>
 
 <template>
-  <div ref="rootRef" class="relative">
-    <button
-      class="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-hover)] transition-colors text-left"
-      @click.stop="open = !open"
-    >
-      <Server class="w-4 h-4 text-[var(--accent)] flex-shrink-0" />
-      <div class="flex-1 min-w-0">
-        <div class="text-[10px] uppercase tracking-wide text-[var(--muted)]">Cluster</div>
-        <div class="text-xs truncate">{{ activeLabel }}</div>
-      </div>
-      <ChevronDown class="w-3.5 h-3.5 flex-shrink-0 text-[var(--muted)]" :class="open ? 'rotate-180' : ''" />
-    </button>
+  <div class="px-1 pb-1">
+    <div class="text-[10px] uppercase tracking-wide text-[var(--muted)] px-1 pb-1 flex items-center justify-between">
+      <span>Clusters</span>
+      <button
+        v-if="canManageKind"
+        class="p-0.5 rounded hover:bg-[var(--bg-hover)] text-[var(--muted)] hover:text-[var(--accent)] transition-colors"
+        title="New KinD cluster"
+        @click="askCreateKind"
+      >
+        <Plus class="w-3 h-3" />
+      </button>
+    </div>
 
+    <!-- Empty state -->
     <div
-      v-if="open"
-      class="absolute left-0 right-0 top-full mt-1 z-30 bg-[var(--bg-surface)] border border-[var(--border)] rounded shadow-lg max-h-96 overflow-y-auto"
+      v-if="store.clusters.length === 0"
+      class="px-1.5 py-2 text-xs text-[var(--muted)] italic"
     >
-      <div v-if="store.clusters.length === 0" class="px-3 py-2 text-xs text-[var(--muted)] italic">
-        No contexts found
-      </div>
+      No clusters. Click + to create one.
+    </div>
+
+    <!-- Tabstrip: vertical rather than horizontal because a 240px
+         sidebar cramps 3 horizontal chips; the active-tab colour
+         stripe gives the same "always visible which env I'm in"
+         signal. -->
+    <div v-else class="flex flex-col gap-0.5">
       <div
         v-for="c in store.clusters"
         :key="c.context"
-        class="flex items-center gap-2 px-2 py-1.5 hover:bg-[var(--bg-hover)] cursor-pointer text-xs"
+        class="group relative flex items-center gap-1.5 px-1.5 py-1 rounded cursor-pointer transition-colors text-xs"
+        :class="c.current
+          ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
+          : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
+        :style="c.current && c.color ? {
+          borderLeft: `3px solid ${c.color}`,
+          paddingLeft: '5px',
+          backgroundColor: `${c.color}22`,
+        } : (c.current ? { borderLeft: '3px solid var(--accent)', paddingLeft: '5px' } : {})"
+        :title="c.context"
         @click="switchTo(c.context)"
       >
-        <Check v-if="c.current" class="w-3.5 h-3.5 text-[var(--success)] flex-shrink-0" />
-        <span v-else class="w-3.5 h-3.5 flex-shrink-0" />
-        <span class="truncate flex-1">{{ c.context }}</span>
-        <button
-          v-if="c.is_kind && canManageKind"
-          class="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--danger)]/30 text-[var(--muted)] hover:text-[var(--danger)] transition-colors"
-          title="Delete KinD cluster"
-          @click.stop="askDeleteKind(c.context)"
-        >
-          <Trash2 class="w-3 h-3" />
-        </button>
-      </div>
-      <div
-        v-if="canManageKind"
-        class="border-t border-[var(--border)] flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-[var(--bg-hover)] text-[var(--accent)]"
-        @click="askCreateKind"
-      >
-        <Plus class="w-3.5 h-3.5" />
-        <span>New KinD cluster...</span>
-      </div>
-      <div
-        v-else-if="!store.inClusterMode"
-        class="border-t border-[var(--border)] px-2 py-1.5 text-[10px] text-[var(--muted)]"
-      >
-        kind CLI not on server PATH
+        <span
+          class="w-2 h-2 rounded-full flex-shrink-0"
+          :style="{ background: c.color || 'var(--muted)' }"
+        />
+        <span class="truncate flex-1">{{ displayName(c) }}</span>
+        <span
+          v-if="c.tag"
+          class="px-1 py-0 text-[9px] uppercase rounded flex-shrink-0"
+          :style="c.color
+            ? { background: `${c.color}33`, color: c.color, border: `1px solid ${c.color}66` }
+            : { background: 'var(--bg-surface)', color: 'var(--muted)' }"
+        >{{ c.tag }}</span>
+        <div class="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+          <button
+            class="w-4 h-4 flex items-center justify-center rounded hover:bg-[var(--accent)]/20 text-[var(--muted)] hover:text-[var(--accent)]"
+            title="Tag and colour"
+            @click.stop="openEdit(c)"
+          >
+            <SettingsIcon class="w-3 h-3" />
+          </button>
+          <button
+            v-if="c.is_kind && canManageKind"
+            class="w-4 h-4 flex items-center justify-center rounded hover:bg-[var(--danger)]/30 text-[var(--muted)] hover:text-[var(--danger)]"
+            title="Delete KinD cluster"
+            @click.stop="askDeleteKind(c)"
+          >
+            <Trash2 class="w-3 h-3" />
+          </button>
+        </div>
       </div>
     </div>
 
@@ -171,6 +198,14 @@ async function doDeleteKind() {
       :lines="progress.lines"
       :error-message="progress.errorMessage"
       @close="progress = null"
+    />
+    <ClusterEditModal
+      v-if="editing"
+      :context="editing.context"
+      :tag="editing.tag"
+      :color="editing.color"
+      @save="saveEdit"
+      @cancel="editing = null"
     />
   </div>
 </template>

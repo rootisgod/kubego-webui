@@ -171,22 +171,32 @@ func (w *Webhook) Validate() error {
 	return nil
 }
 
+// ClusterMeta is user-chosen metadata for a kubeconfig context: an
+// environment tag (e.g. "dev"/"staging"/"prod") and an accent colour
+// that drives the sidebar's cluster-scoped region, so `kind-prod` is
+// visibly distinct from `kind-dev` at a glance.
+type ClusterMeta struct {
+	Tag   string `json:"tag,omitempty"`
+	Color string `json:"color,omitempty"` // CSS colour string — "#rrggbb" or a named colour
+}
+
 type Config struct {
-	Listen        string            `json:"listen"`
-	CloudInitDir  string            `json:"cloud_init_dir"`
-	CloudInitRepo string            `json:"cloud_init_repo"`
-	Username      string            `json:"username"`
-	Password      string            `json:"password"`
-	TrustProxy    bool              `json:"trust_proxy,omitempty"`
-	Groups        []string          `json:"groups,omitempty"`
-	VMGroups      map[string]string `json:"vm_groups,omitempty"`
-	LLM           *LLMConfig        `json:"llm,omitempty"`
-	VMDefaults    *VMDefaults       `json:"vm_defaults,omitempty"`
-	PlaybooksDir  string            `json:"playbooks_dir,omitempty"`
-	Profiles      []Profile         `json:"profiles,omitempty"`
-	Schedules     []Schedule        `json:"schedules,omitempty"`
-	APITokens     []APIToken        `json:"api_tokens,omitempty"`
-	Webhooks      []Webhook         `json:"webhooks,omitempty"`
+	Listen           string                 `json:"listen"`
+	CloudInitDir     string                 `json:"cloud_init_dir"`
+	CloudInitRepo    string                 `json:"cloud_init_repo"`
+	Username         string                 `json:"username"`
+	Password         string                 `json:"password"`
+	TrustProxy       bool                   `json:"trust_proxy,omitempty"`
+	Groups           []string               `json:"groups,omitempty"`
+	VMGroups         map[string]string      `json:"vm_groups,omitempty"`
+	LLM              *LLMConfig             `json:"llm,omitempty"`
+	VMDefaults       *VMDefaults            `json:"vm_defaults,omitempty"`
+	PlaybooksDir     string                 `json:"playbooks_dir,omitempty"`
+	Profiles         []Profile              `json:"profiles,omitempty"`
+	Schedules        []Schedule             `json:"schedules,omitempty"`
+	APITokens        []APIToken             `json:"api_tokens,omitempty"`
+	Webhooks         []Webhook              `json:"webhooks,omitempty"`
+	ClusterMetadata  map[string]ClusterMeta `json:"cluster_metadata,omitempty"`
 }
 
 func (c *Config) GetProfiles() []Profile {
@@ -500,6 +510,30 @@ func HashPassword(password string) (string, error) {
 		return "", err
 	}
 	return string(hash), nil
+}
+
+// GetClusterMeta returns the metadata for a context name, or a zero
+// value if none is stored. Never returns nil.
+func (c *Config) GetClusterMeta(context string) ClusterMeta {
+	if c.ClusterMetadata == nil {
+		return ClusterMeta{}
+	}
+	return c.ClusterMetadata[context]
+}
+
+// SetClusterMeta writes metadata for a context. An empty meta (both
+// fields blank) clears the entry to keep the config tidy.
+func (c *Config) SetClusterMeta(context string, meta ClusterMeta) {
+	meta.Tag = strings.TrimSpace(meta.Tag)
+	meta.Color = strings.TrimSpace(meta.Color)
+	if meta.Tag == "" && meta.Color == "" {
+		delete(c.ClusterMetadata, context)
+		return
+	}
+	if c.ClusterMetadata == nil {
+		c.ClusterMetadata = make(map[string]ClusterMeta)
+	}
+	c.ClusterMetadata[context] = meta
 }
 
 // MigratePassword checks if the stored password is plaintext (not bcrypt-hashed)

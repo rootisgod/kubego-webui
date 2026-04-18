@@ -223,6 +223,8 @@ export const listChatModels = () => request('GET', '/chat/models')
 // Clusters (kubeconfig contexts + KinD)
 export const listClusters = () => request('GET', '/clusters')
 export const selectCluster = (context) => request('POST', '/clusters/select', { context })
+export const setClusterMetadata = (context, meta) =>
+  request('PUT', `/clusters/${encodeURIComponent(context)}/metadata`, meta)
 
 // Host machine check (external tools + kernel sysctls)
 export const hostCheck = () => request('GET', '/host/check')
