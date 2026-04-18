@@ -117,8 +117,26 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	setSSEHeaders(w, flusher)
 
-	// Step 1: `kind create cluster`
-	kindArgs := []string{"create", "cluster", "--name", req.Name}
+	// Step 1: `kind create cluster`. When the host has /dev/kvm, generate
+	// a KIND config that bind-mounts it into the control-plane node so
+	// KubeVirt's device-plugin daemonset advertises devices.kubevirt.io/kvm
+	// and VMs run at near-native speed. Otherwise fall back to software
+	// emulation (useEmulation patched in below).
+	kvmPassthrough := hostHasKVM()
+	kindArgs := []string{"create", "cluster"}
+	if kvmPassthrough {
+		cfgPath, err := writeKindConfigWithKVM(req.Name)
+		if err != nil {
+			writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: "write kind config: " + err.Error()})
+			return
+		}
+		defer os.Remove(cfgPath)
+		streamLine(w, flusher, "==> Host has /dev/kvm — bind-mounting into the KinD node for hardware acceleration")
+		kindArgs = append(kindArgs, "--config", cfgPath)
+	} else {
+		streamLine(w, flusher, "==> Host has no /dev/kvm — cluster will use software emulation (slow)")
+		kindArgs = append(kindArgs, "--name", req.Name)
+	}
 	if kcfg := s.clusters.KubeconfigPath(); kcfg != "" {
 		kindArgs = append(kindArgs, "--kubeconfig", kcfg)
 	}
@@ -132,10 +150,11 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: "activate new context: " + err.Error()})
 		return
 	}
-	s.logger.Info("kind cluster created, starting KubeVirt install", "context", contextName)
+	s.logger.Info("kind cluster created, starting KubeVirt install", "context", contextName, "kvm_passthrough", kvmPassthrough)
 
-	// Step 2..N: install KubeVirt + CDI into the new context.
-	if err := s.installKubeVirtIntoKind(r.Context(), w, flusher, contextName); err != nil {
+	// Step 2..N: install KubeVirt + CDI into the new context. Skip the
+	// useEmulation patch when /dev/kvm is present in the node.
+	if err := s.installKubeVirtIntoKind(r.Context(), w, flusher, contextName, !kvmPassthrough); err != nil {
 		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: err.Error()})
 		return
 	}
@@ -198,10 +217,10 @@ func (s *Server) handleKindDelete(w http.ResponseWriter, r *http.Request) {
 
 // installKubeVirtIntoKind runs the post-create KubeVirt + CDI install
 // chain against kctx. Mirrors scripts/kind-up.sh: operator + CR for
-// KubeVirt, always-on useEmulation (UI-created KinD nodes never mount
+// KubeVirt, optional useEmulation patch (only when the node lacks
 // /dev/kvm), operator + CR for CDI, then waits for both to reach
 // Available. Streams every subcommand's output as SSE output events.
-func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kctx string) error {
+func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kctx string, useEmulation bool) error {
 	streamPhase(w, flusher, "Resolving KubeVirt + CDI release versions")
 	kvVer, err := resolveKubeVirtVersion(ctx)
 	if err != nil {
@@ -214,11 +233,11 @@ func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWri
 	}
 	streamLine(w, flusher, "  CDI "+cdiVer)
 
-	kcfg := s.clusters.KubeconfigPath()
-	steps := []struct {
+	type installStep struct {
 		label string
 		args  []string
-	}{
+	}
+	steps := []installStep{
 		{
 			"Installing KubeVirt operator",
 			[]string{"apply", "-f", fmt.Sprintf("https://github.com/kubevirt/kubevirt/releases/download/%s/kubevirt-operator.yaml", kvVer)},
@@ -227,29 +246,37 @@ func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWri
 			"Installing KubeVirt custom resource",
 			[]string{"apply", "-f", fmt.Sprintf("https://github.com/kubevirt/kubevirt/releases/download/%s/kubevirt-cr.yaml", kvVer)},
 		},
-		{
-			"Enabling software emulation (UI-created KinD nodes have no /dev/kvm)",
+	}
+	if useEmulation {
+		steps = append(steps, installStep{
+			"Enabling software emulation (KinD node has no /dev/kvm)",
 			[]string{"-n", "kubevirt", "patch", "kubevirt", "kubevirt", "--type=merge",
 				"--patch", `{"spec":{"configuration":{"developerConfiguration":{"useEmulation":true}}}}`},
-		},
-		{
+		})
+	}
+	steps = append(steps,
+		installStep{
 			"Installing CDI operator",
 			[]string{"apply", "-f", fmt.Sprintf("https://github.com/kubevirt/containerized-data-importer/releases/download/%s/cdi-operator.yaml", cdiVer)},
 		},
-		{
+		installStep{
 			"Installing CDI custom resource",
 			[]string{"apply", "-f", fmt.Sprintf("https://github.com/kubevirt/containerized-data-importer/releases/download/%s/cdi-cr.yaml", cdiVer)},
 		},
-		{
+		installStep{
 			"Waiting for KubeVirt to become Available (can take several minutes on first install)",
 			[]string{"-n", "kubevirt", "wait", "--for=condition=Available", "--timeout=10m", "kv/kubevirt"},
 		},
-		{
+		installStep{
 			"Waiting for CDI to become Available",
 			[]string{"-n", "cdi", "wait", "--for=condition=Available", "--timeout=10m", "cdi/cdi"},
 		},
+	)
+	if !useEmulation {
+		streamPhase(w, flusher, "Hardware virtualisation available in the KinD node — skipping useEmulation patch")
 	}
 
+	kcfg := s.clusters.KubeconfigPath()
 	for _, step := range steps {
 		streamPhase(w, flusher, step.label)
 		kargs := []string{"--context", kctx}
@@ -262,6 +289,44 @@ func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWri
 		}
 	}
 	return nil
+}
+
+// hostHasKVM reports whether /dev/kvm exists on the host the server is
+// running on. Used to decide whether the UI-created KinD node gets a
+// bind-mounted /dev/kvm for hardware acceleration.
+func hostHasKVM() bool {
+	_, err := os.Stat("/dev/kvm")
+	return err == nil
+}
+
+// writeKindConfigWithKVM writes a KIND v1alpha4 cluster config to a
+// temp file with /dev/kvm bind-mounted into the control-plane node.
+// Mirrors the YAML that scripts/kind-up.sh generates. Caller must
+// os.Remove the returned path.
+func writeKindConfigWithKVM(name string) (string, error) {
+	f, err := os.CreateTemp("", "kubego-kind-*.yaml")
+	if err != nil {
+		return "", err
+	}
+	yaml := fmt.Sprintf(`kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: %s
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: /dev/kvm
+        containerPath: /dev/kvm
+`, name)
+	if _, werr := f.WriteString(yaml); werr != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", werr
+	}
+	if cerr := f.Close(); cerr != nil {
+		os.Remove(f.Name())
+		return "", cerr
+	}
+	return f.Name(), nil
 }
 
 // resolveKubeVirtVersion honours $KUBEVIRT_VERSION for parity with
