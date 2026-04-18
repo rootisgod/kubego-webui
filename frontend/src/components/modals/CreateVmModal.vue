@@ -30,8 +30,8 @@ const selectedSize = ref('medium')
 const name = ref('')
 const release = ref('')
 const cpus = ref(2)
-const memoryMB = ref(1024)
-const diskGB = ref(8)
+const memoryMB = ref(2048)
+const diskGB = ref(16)
 const cloudInit = ref('')
 const network = ref('')
 const playbook = ref('')
@@ -102,8 +102,8 @@ watch(selectedProfile, (id) => {
 })
 
 let defaultCpus = 2
-let defaultMemory = 1024
-let defaultDisk = 8
+let defaultMemory = 2048
+let defaultDisk = 16
 
 onMounted(async () => {
   // Generate placeholder name

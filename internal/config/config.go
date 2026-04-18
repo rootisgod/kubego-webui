@@ -422,17 +422,19 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	if cfg.VMDefaults == nil {
-		cfg.VMDefaults = &VMDefaults{CPUs: 2, MemoryMB: 1024, DiskGB: 8}
+		cfg.VMDefaults = &VMDefaults{CPUs: 2, MemoryMB: 2048, DiskGB: 16}
 	}
-	// Enforce minimums
+	// Enforce minimums. Fallbacks match the "Medium" size preset in
+	// the Launch VM modal so the default VM lands with comfortable
+	// room for a modern distro + workload.
 	if cfg.VMDefaults.CPUs < 1 {
 		cfg.VMDefaults.CPUs = 2
 	}
 	if cfg.VMDefaults.MemoryMB < 512 {
-		cfg.VMDefaults.MemoryMB = 1024
+		cfg.VMDefaults.MemoryMB = 2048
 	}
 	if cfg.VMDefaults.DiskGB < 1 {
-		cfg.VMDefaults.DiskGB = 8
+		cfg.VMDefaults.DiskGB = 16
 	}
 	return &cfg, nil
 }

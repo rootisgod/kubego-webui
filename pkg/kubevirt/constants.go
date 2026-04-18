@@ -8,8 +8,8 @@ import (
 const (
 	DefaultUbuntuRelease = "24.04"
 	DefaultCPUCores      = 2
-	DefaultRAMMB         = 1024
-	DefaultDiskGB        = 8
+	DefaultRAMMB         = 2048
+	DefaultDiskGB        = 16
 	MinCPUCores          = 1
 	MinRAMMB             = 512
 	MinResizeRAMMB       = 256
