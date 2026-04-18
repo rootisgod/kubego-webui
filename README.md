@@ -48,7 +48,7 @@ task kind:up
 
 Creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, installs CDI, and waits for both to become `Available`. If the host has `/dev/kvm`, bind-mounts it into the KinD node for hardware acceleration; otherwise patches KubeVirt into software-emulation mode. Idempotent — re-run it any time. First run takes 5–10 minutes; subsequent runs are seconds.
 
-After the binary is up (step 4), additional KinD clusters can be spun up from the sidebar cluster switcher in the UI — that path streams the same install chain over SSE and auto-activates the new context.
+After the binary is up (step 4), additional KinD clusters can be spun up from the sidebar cluster switcher in the UI — that path streams the same install chain over SSE and auto-activates the new context. Running more than one kind cluster on the same host also needs `fs.inotify.max_user_instances` raised above the Ubuntu default of 128, or the second cluster's `coredns` and `virt-operator` will silently fail to watch the API; the UI's **Machine Check** sidebar entry diagnoses and (as root) applies the fix.
 
 ### 4. Build the binary and run it
 
@@ -130,6 +130,7 @@ task kind:up
 - **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR. containerDisk-only for now — disks are ephemeral.
 - **Multi-cluster switcher:** `GET /api/v1/clusters` enumerates kubeconfig contexts; `POST /api/v1/clusters/select` flips the active one. `POST /api/v1/clusters/kind` and `DELETE /api/v1/clusters/kind/{name}` shell out to `kind` with SSE progress; create bundles the KubeVirt + CDI install (operator, CR, optional `useEmulation` patch, wait-for-Available) and bind-mounts host `/dev/kvm` into the KinD node when present. Auto-selects the new context on create; falls back to a surviving context on delete. Sidebar header exposes the switcher; in-cluster mode hides KinD ops.
 - **Serial console:** Multi-session VNC-less virt-api SerialConsole proxy, rendered with xterm.js; scrollback survives tab switches within a VM.
+- **Machine Check:** `GET /api/v1/host/check` surfaces the external CLIs the server shells out to (`kind`, `kubectl`, `docker`, `task`) and the kernel sysctls that bite multi-cluster kind setups (`fs.inotify.max_user_instances`, `fs.inotify.max_user_watches`). `POST /api/v1/host/sysctl` applies the recommended values to `/proc/sys` when the server is running as root on linux outside a cluster; the UI exposes this via a sidebar entry and shows the `/etc/sysctl.d` snippet for persistence.
 
 ## What does not work yet
 
