@@ -127,7 +127,8 @@ task kind:up
 - Startup discovery probe for `kubevirt.io/v1`; logs, not crashes, when absent.
 - Session + bearer-token auth, rate limiting, event log, config load/save, REST endpoints for every resource the driver exposes.
 - Filesystem-backed helpers for cloud-init templates and Ansible playbooks survive the rewrite.
-- **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR. containerDisk-only for now — disks are ephemeral.
+- **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR.
+- **Persistent root disks:** the VM's root disk is declared via `spec.dataVolumeTemplates`, so KubeVirt creates a CDI-backed DataVolume that imports the `quay.io/containerdisks/...` image (via `source.registry` with the default `pullMethod: pod`) into a PVC sized to the user's chosen `diskGB`. The DV and its PVC are owned by the VM → they GC together on delete. No explicit `storageClassName` is set, so the cluster default wins (KinD ships `standard` via rancher.io/local-path; RWO works fine for single-VM). Disk state now survives stop/start; Ubuntu cloud-init's `growpart` expands the root filesystem into whatever size was requested on first boot.
 - **Launch VM flow:** the Create VM modal opens in a Quick mode — name, image, and a three-button size preset (Small `1 CPU · 1 GB · 8 GB`, Medium `2 CPU · 2 GB · 16 GB`, Large `4 CPU · 4 GB · 32 GB`) — so the happy path stays close to `multipass launch`-style brevity. "Medium" matches the out-of-the-box config defaults (`VMDefaults{CPUs: 2, MemoryMB: 2048, DiskGB: 16}` in `internal/config/config.go` and `DefaultRAMMB`/`DefaultDiskGB` in `pkg/kubevirt/constants.go`), so a bare launch gives you a VM with comfortable headroom for a modern distro. Advanced mode reveals the full form (profile, manual resources, cloud-init, network, post-launch playbook) and persists "Save as Profile." Values carry between modes; deviating from a preset in Advanced drops the Quick highlight and surfaces a "Custom: …" summary.
 - **Multi-cluster switcher:** `GET /api/v1/clusters` enumerates kubeconfig contexts (decorated with user-chosen tag + accent colour from `cluster_metadata` in config); `POST /api/v1/clusters/select` flips the active one; `PUT /api/v1/clusters/{context}/metadata` persists a tag/colour pair for a context. `POST /api/v1/clusters/kind` and `DELETE /api/v1/clusters/kind/{name}` shell out to `kind` with SSE progress; create bundles the KubeVirt + CDI install (operator, CR, optional `useEmulation` patch, wait-for-Available) and bind-mounts host `/dev/kvm` into the KinD node when present. Auto-selects the new context on create; falls back to a surviving context on delete. The sidebar renders a vertical stack of cluster "chips" (each with its colour dot + tag badge), and the active cluster's colour is applied as a left-edge stripe down the whole cluster-scoped region — so `kind-dev`, `kind-staging`, and `kind-prod` stay visually distinct and destructive actions on the wrong environment are easier to catch. The app header carries the same chip as a persistent breadcrumb: brand › [● dev], so you always see which environment you're operating on even when the sidebar is scrolled. In-cluster mode hides KinD ops.
 - **Serial console:** Multi-session VNC-less virt-api SerialConsole proxy, rendered with xterm.js; scrollback survives tab switches within a VM.
@@ -138,7 +139,6 @@ task kind:up
 
 | Area | Status | Milestone |
 |------|--------|-----------|
-| Persistent root disks (DataVolume + PVC) | Stubbed — containerDisk only | M3 slice D |
 | Snapshots / clone | Stubbed — UI tab renders, list call 500s | M4 |
 | PVC hot-plug disks | Stubbed — AttachDisk/DetachDisk return 501 | M4 |
 | Resize / guest-agent exec | Stubbed | M5 |
@@ -221,7 +221,7 @@ All endpoints are under `/api/v1/`. Auth via session cookie or `Authorization: B
 | Multi-cluster | Kubeconfig switcher + UI-driven KinD create/delete with KubeVirt+CDI auto-install and `/dev/kvm` passthrough. | shipped |
 | Machine Check | Sidebar panel: external tool discovery (`kind`, `kubectl`, `docker`, `k9s`, `task`) + kernel sysctl prereqs with one-click apply. | shipped |
 | Embedded k9s | PTY-backed k9s terminal proxied into xterm.js; scoped to the active kubeconfig context. | shipped |
-| M1–M3 slice D | Swap containerDisk for DataVolume + PVC so disks persist. | unblocked (CDI now installed) |
+| M1–M3 slice D | Swap containerDisk for DataVolume + PVC so disks persist. | shipped |
 | M4 | Snapshots, clone (snapshot+restore), PVC hot-plug disks. | pending |
 | M5 | Resize, guest-agent exec, bulk. | pending |
 | M6 | Multi-namespace tenancy (optional). | pending |

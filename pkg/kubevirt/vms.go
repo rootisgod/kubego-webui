@@ -38,11 +38,11 @@ var (
 	}
 )
 
-// UbuntuContainerDiskImage is the default root-disk source for LaunchVM in
-// Slice A. We use the KubeVirt containerdisks org's Ubuntu image, keyed by
-// release. containerDisk is ephemeral — disk changes are lost on pod
-// restart. A follow-on slice swaps this for a DataVolume+PVC once CDI is
-// in the bring-up path.
+// UbuntuContainerDiskImage is the default root-disk source for LaunchVM.
+// We use the KubeVirt containerdisks org's Ubuntu image, keyed by release.
+// The image is containerDisk-formatted (disk file under /disk in the
+// container) and is also consumed by CDI's registry importer to populate
+// a PVC when we provision via dataVolumeTemplates.
 func UbuntuContainerDiskImage(release string) string {
 	if release == "" {
 		release = DefaultUbuntuRelease
@@ -51,8 +51,15 @@ func UbuntuContainerDiskImage(release string) string {
 }
 
 // LaunchVM provisions a Secret holding cloud-init user-data (if any) and
-// then a VirtualMachine CR wired to a containerDisk. Returns the VM's name
-// on success.
+// then a VirtualMachine CR whose root disk is a DataVolume (PVC backed by
+// CDI, sourced from the containerdisks image). Returns the VM's name on
+// success.
+//
+// The DataVolume is declared via `spec.dataVolumeTemplates` so KubeVirt
+// owns its lifecycle — delete the VM and the DV (and its PVC) go with it.
+// First boot runs cloud-init's growpart/resize2fs to expand the filesystem
+// into whatever disk size the user requested, so a 2 GB Ubuntu image in a
+// 16 GB PVC yields a 16 GB usable root disk.
 func (c *kubevirtClient) LaunchVM(name, release string, cpus, memoryMB, diskGB int, cloudInitFile, networkName string) (string, error) {
 	if err := ValidateVMName(name); err != nil {
 		return "", err
@@ -66,10 +73,9 @@ func (c *kubevirtClient) LaunchVM(name, release string, cpus, memoryMB, diskGB i
 	if memoryMB <= 0 {
 		memoryMB = DefaultRAMMB
 	}
-	// diskGB is intentionally ignored in Slice A — containerDisk's size is
-	// the image's size. We surface it on the create API so the UI contract
-	// is stable once DataVolume-backed disks land.
-	_ = diskGB
+	if diskGB <= 0 {
+		diskGB = DefaultDiskGB
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -79,7 +85,7 @@ func (c *kubevirtClient) LaunchVM(name, release string, cpus, memoryMB, diskGB i
 		return "", fmt.Errorf("write cloud-init secret: %w", err)
 	}
 
-	vm := buildVMObject(c.namespace, name, release, cpus, memoryMB, secretName)
+	vm := buildVMObject(c.namespace, name, release, cpus, memoryMB, diskGB, secretName)
 	created, err := c.dyn.Resource(vmGVR).Namespace(c.namespace).Create(ctx, vm, metav1.CreateOptions{})
 	if err != nil {
 		// Roll back the secret so a retry with the same name isn't
@@ -150,21 +156,23 @@ func (c *kubevirtClient) setSecretOwner(ctx context.Context, secretName string, 
 }
 
 // buildVMObject returns a VirtualMachine unstructured object with a
-// containerDisk root and (optional) cloudInitNoCloud user-data. The spec
-// is deliberately minimal — defaults rely on KubeVirt-side defaulting for
-// interface model, feature gates, etc.
-func buildVMObject(namespace, name, release string, cpus, memoryMB int, cloudInitSecret string) *unstructured.Unstructured {
+// DataVolume-backed root disk (CDI-imported from the containerdisks
+// registry image) and an optional cloudInitNoCloud user-data disk. The
+// DataVolume is declared via `spec.dataVolumeTemplates` so it inherits
+// the VM's lifecycle — delete the VM, the DV and its PVC go with it.
+func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, cloudInitSecret string) *unstructured.Unstructured {
+	rootDVName := name + "-root"
 	disks := []any{
 		map[string]any{
-			"name": "containerdisk",
+			"name": "rootdisk",
 			"disk": map[string]any{"bus": "virtio"},
 		},
 	}
 	volumes := []any{
 		map[string]any{
-			"name": "containerdisk",
-			"containerDisk": map[string]any{
-				"image": UbuntuContainerDiskImage(release),
+			"name": "rootdisk",
+			"dataVolume": map[string]any{
+				"name": rootDVName,
 			},
 		},
 	}
@@ -181,6 +189,36 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB int, cloudIni
 		})
 	}
 
+	// DataVolume template: CDI pulls the containerdisk image via its
+	// registry importer (pullMethod defaults to "pod") and writes the
+	// embedded disk file into a PVC sized to diskGB. accessModes and
+	// storageClassName intentionally omitted so the cluster's default
+	// StorageClass picks RWO-capable storage (KinD ships `standard`,
+	// provisioned by rancher.io/local-path).
+	dvTemplate := map[string]any{
+		"metadata": map[string]any{
+			"name": rootDVName,
+			"labels": map[string]any{
+				"app.kubernetes.io/managed-by": "kubego",
+				"kubego.io/vm":                 name,
+			},
+		},
+		"spec": map[string]any{
+			"source": map[string]any{
+				"registry": map[string]any{
+					"url": "docker://" + UbuntuContainerDiskImage(release),
+				},
+			},
+			"storage": map[string]any{
+				"resources": map[string]any{
+					"requests": map[string]any{
+						"storage": fmt.Sprintf("%dGi", diskGB),
+					},
+				},
+			},
+		},
+	}
+
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "kubevirt.io/v1",
 		"kind":       "VirtualMachine",
@@ -193,7 +231,8 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB int, cloudIni
 			},
 		},
 		"spec": map[string]any{
-			"runStrategy": "Always",
+			"runStrategy":         "Always",
+			"dataVolumeTemplates": []any{dvTemplate},
 			"template": map[string]any{
 				"metadata": map[string]any{
 					"labels": map[string]any{
@@ -312,6 +351,16 @@ func vmInfoFrom(vm, vmi *unstructured.Unstructured) VMInfo {
 	if guest, ok, _ := unstructured.NestedString(vm.Object, "spec", "template", "spec", "domain", "memory", "guest"); ok {
 		info.MemoryTotal = guest
 	}
+	// Root-disk size from the VM's dataVolumeTemplates entry. This is
+	// the PVC request size, not the filesystem-visible size — cloud-init
+	// growpart expands into it on first boot.
+	if dvs, ok, _ := unstructured.NestedSlice(vm.Object, "spec", "dataVolumeTemplates"); ok && len(dvs) > 0 {
+		if m, isMap := dvs[0].(map[string]any); isMap {
+			if size, ok, _ := unstructured.NestedString(m, "spec", "storage", "resources", "requests", "storage"); ok {
+				info.DiskTotal = size
+			}
+		}
+	}
 
 	if vmi != nil {
 		info.IPv4 = extractVMIIPs(vmi)
@@ -361,14 +410,16 @@ func (c *kubevirtClient) setRunStrategy(name, strategy string) error {
 	return nil
 }
 
-// DeleteVM deletes the VM CR. In Slice A the VM has no PVCs (containerDisk
-// only) so `purge` is informational; once DataVolumes land, purge=true
-// will delete the owned DataVolume+PVC and purge=false will retain them.
+// DeleteVM deletes the VM CR. The root DataVolume is declared via
+// `spec.dataVolumeTemplates`, so KubeVirt owns it (and the PVC CDI
+// provisioned from it) and both are GC'd along with the VM. `purge`
+// is currently a no-op — PVC retention on delete is a follow-up once
+// snapshot/export lands (see M4).
 func (c *kubevirtClient) DeleteVM(name string, purge bool) error {
 	if err := ValidateVMName(name); err != nil {
 		return err
 	}
-	_ = purge // containerDisk VMs have no persistent storage to preserve
+	_ = purge // owned-DV lifecycle always tracks the VM today
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	err := c.dyn.Resource(vmGVR).Namespace(c.namespace).Delete(ctx, name, metav1.DeleteOptions{})
