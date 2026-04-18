@@ -2,7 +2,7 @@
 
 A browser UI and REST API for [KubeVirt](https://kubevirt.io/) — drives VMs as Kubernetes resources so a single commodity cluster can carry VMs alongside containers. Forked from [PassGo Web](https://github.com/rootisgod/passgo-webui) and progressively retargeted away from Canonical Multipass.
 
-> **Status: M1–M3 slice A (pre-alpha).** The binary builds, boots against a cluster, and can create / list / start / stop / delete an Ubuntu 24.04 VM end-to-end via `quay.io/containerdisks/ubuntu:24.04` (a containerDisk — ephemeral, no PVC yet). Snapshots, disks, resize, console, exec, transfers, Ansible and the LLM tools still return `ErrNotImplemented`; frontend is still PassGo-shaped. See [PLAN.md](PLAN.md) for the full milestone breakdown.
+> **Status: pre-alpha.** The binary builds, boots against a cluster, and can create / list / start / stop / delete an Ubuntu 24.04 VM end-to-end via `quay.io/containerdisks/ubuntu:24.04` (a containerDisk — ephemeral, no PVC yet). The KubeGo-shaped Vue UI is wired to the backend with a serial console, logs tab, cluster info page, and a multi-cluster switcher that can create and delete KinD clusters in-browser with KubeVirt+CDI auto-installed. Snapshots, PVC hot-plug disks, resize, guest-agent exec, file transfer, and Ansible still return `ErrNotImplemented`. See [PLAN.md](PLAN.md) for the milestone breakdown.
 
 ## Bare-minimum quickstart on a new machine
 
@@ -43,10 +43,12 @@ cd kubego-webui
 ### 3. Create a KinD cluster with KubeVirt installed
 
 ```bash
-./scripts/kind-up.sh
+task kind:up
 ```
 
-This creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, patches it into software-emulation mode (KinD nodes have no `/dev/kvm`), installs CDI, and waits for both to become `Available`. Idempotent — re-run it any time. First run takes 5–10 minutes; subsequent runs are seconds.
+Creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, installs CDI, and waits for both to become `Available`. If the host has `/dev/kvm`, bind-mounts it into the KinD node for hardware acceleration; otherwise patches KubeVirt into software-emulation mode. Idempotent — re-run it any time. First run takes 5–10 minutes; subsequent runs are seconds.
+
+After the binary is up (step 4), additional KinD clusters can be spun up from the sidebar cluster switcher in the UI — that path streams the same install chain over SSE and auto-activates the new context.
 
 ### 4. Build the binary and run it
 
@@ -54,7 +56,7 @@ This creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, patche
 task run
 ```
 
-This builds `./kubego` and runs it against `~/.kube/config` on port 8081. Leave it running; open `http://localhost:8081` (login `admin` / `admin`). The UI is still the placeholder — the real verification is in the logs:
+This builds `./kubego` and runs it against `~/.kube/config` on port 8081. Leave it running; open `http://localhost:8081` (login `admin` / `admin`). The UI lists VMs from the active context, lets you create/start/stop/delete them, serves the serial console, and exposes the cluster switcher. Verify in the logs:
 
 ```
 level=INFO msg="kubevirt driver ready" source=kubeconfig:... namespace=default server=...
@@ -66,8 +68,6 @@ Or hit the API directly:
 ```bash
 curl -s localhost:8081/api/v1/version
 ```
-
-That's the full bare-minimum path. VM-operation endpoints return an `ErrNotImplemented` error — that is the M0 state; M1+ wires them against real VM CRs. See the [Roadmap](#roadmap) below.
 
 ### Tear down
 
@@ -109,14 +109,16 @@ Skip step 3. Step 4 works unchanged — the binary only cares that `--kubeconfig
 KUBEGO_KIND_CLUSTER=my-cluster \
 KUBEVIRT_VERSION=v1.2.0 \
 CDI_VERSION=v1.59.0 \
-./scripts/kind-up.sh
+task kind:up
 ```
+
+`KUBEVIRT_VERSION` / `CDI_VERSION` are also honoured by the UI-create flow when set on the server process environment.
 
 ### Using Task
 
-[`task`](https://taskfile.dev/) is optional — every Taskfile entry maps 1:1 to a shell command you've already seen above. `task kind:up`, `task run`, `task smoke`, `task kind:down` cover the quickstart path.
+[`task`](https://taskfile.dev/) is optional — every Taskfile entry maps 1:1 to a shell command. `task kind:up`, `task run`, `task smoke`, `task kind:down` cover the quickstart path.
 
-> KinD runs KubeVirt in **software emulation** (10–100× slower than KVM, because KinD nodes have no `/dev/kvm`). Fine for wiring and integration tests; don't run real workloads. See PLAN.md §5.
+> On hosts without `/dev/kvm`, KubeVirt runs in **software emulation** (10–100× slower than KVM). Fine for wiring and integration tests; don't run real workloads. Both `task kind:up` and the UI-create flow detect `/dev/kvm` on the host and bind-mount it into the KinD node when available; otherwise they patch `useEmulation: true`.
 
 ## What works today
 
@@ -126,24 +128,22 @@ CDI_VERSION=v1.59.0 \
 - Session + bearer-token auth, rate limiting, event log, config load/save, REST endpoints for every resource the driver exposes.
 - Filesystem-backed helpers for cloud-init templates and Ansible playbooks survive the rewrite.
 - **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR. containerDisk-only for now — disks are ephemeral.
-- **Multi-cluster switcher:** `GET /api/v1/clusters` enumerates kubeconfig contexts; `POST /api/v1/clusters/select` flips the active one. `POST /api/v1/clusters/kind` and `DELETE /api/v1/clusters/kind/{name}` shell out to `kind` with SSE progress, auto-selecting the new context on create and falling back to a surviving context on delete. Sidebar header exposes the switcher; in-cluster mode hides KinD ops.
+- **Multi-cluster switcher:** `GET /api/v1/clusters` enumerates kubeconfig contexts; `POST /api/v1/clusters/select` flips the active one. `POST /api/v1/clusters/kind` and `DELETE /api/v1/clusters/kind/{name}` shell out to `kind` with SSE progress; create bundles the KubeVirt + CDI install (operator, CR, optional `useEmulation` patch, wait-for-Available) and bind-mounts host `/dev/kvm` into the KinD node when present. Auto-selects the new context on create; falls back to a surviving context on delete. Sidebar header exposes the switcher; in-cluster mode hides KinD ops.
+- **Serial console:** Multi-session VNC-less virt-api SerialConsole proxy, rendered with xterm.js; scrollback survives tab switches within a VM.
 
 ## What does not work yet
 
 | Area | Status | Milestone |
 |------|--------|-----------|
 | Persistent root disks (DataVolume + PVC) | Stubbed — containerDisk only | M3 slice D |
-| Serial console | Routes removed | M2 (virt-api `SerialConsole` proxy) |
-| Snapshots / clone / disks | Stubbed | M4 |
-| Resize / exec / bulk | Stubbed | M5 |
+| Snapshots / clone | Stubbed — UI tab renders, list call 500s | M4 |
+| PVC hot-plug disks | Stubbed — AttachDisk/DetachDisk return 501 | M4 |
+| Resize / guest-agent exec | Stubbed | M5 |
 | Multi-namespace tenancy | Single-namespace only | M6 |
-| Ansible inventory, file transfer | Stubbed | M7 |
-| Metrics / Kubernetes Events | Stubbed | M8 |
+| Ansible inventory, file transfer | Stubbed — TransferFromVM/TransferToVM return 501 | M7 |
+| Metrics / Kubernetes Events | Stubbed (load-avg cards show a pod-request proxy) | M8 |
 | CAPK (workload clusters) | Not in scope | M9 |
 | Helm chart | Missing | M0 Slice 3 |
-| Frontend (Vue app) | Still calls PassGo routes | next slice |
-
-The Vue app in `frontend/` builds but renders broken against the current backend — it asks for removed routes (`/mounts`, `/host/resources`, `/recover`) and its VM-create dialog hasn't been wired to the new endpoint. Next slice unbreaks list + create + lifecycle there and renames Mounts → Disks.
 
 ## Development
 
@@ -202,24 +202,26 @@ All endpoints are under `/api/v1/`. Auth via session cookie or `Authorization: B
 - `/vms/{name}/mounts*` → `/vms/{name}/disks*` (PVC hot-plug, not host bind-mounts).
 - `/vms/{name}/recover`, `/vms/purge`, `/host/files`, `/host/home`, `/mounts/open` — **removed**.
 - `/vms/{name}/suspend` — kept as alias for stop.
-- Shell routes dropped for M0; re-added in M2 against virt-api.
-- `/clusters*` — new; kubeconfig context list + select, KinD create/delete with SSE progress streams.
+- `/vms/{name}/shell/sessions*` + the `/vms/{name}/shell/{sessionId}` WebSocket — back, proxying virt-api's `SerialConsole` subresource.
+- `/clusters*` — new; kubeconfig context list + select, KinD create/delete with SSE progress streams. Create bundles KubeVirt + CDI install.
 
 ## Roadmap
 
-| Milestone | Scope |
-|-----------|-------|
-| M0 | Driver interface + cluster wiring + CRD probe. |
-| M1–M3 slice A (current) | VM create/list/start/stop/delete against containerDisk. Backend only. |
-| M1–M3 slice B (next) | Frontend port: wire VM list + create dialog + lifecycle against the new backend. |
-| M1–M3 slice D | Swap containerDisk for DataVolume + PVC so disks persist. |
-| M2 console | Lifecycle + serial console via virt-api. |
-| M4 | Snapshots, clone (snapshot+restore), PVC hot-plug disks. |
-| M5 | Resize, guest-agent exec, bulk. |
-| M6 | Multi-namespace tenancy (optional). |
-| M7 | Ansible inventory from VMIs, file transfer via guest agent. |
-| M8 | Cluster node metrics, optional Kubernetes Events mirror. |
-| M9 | CAPK workload clusters. |
+| Milestone | Scope | Status |
+|-----------|-------|--------|
+| M0 | Driver interface + cluster wiring + CRD probe. | shipped |
+| M1–M3 slice A | VM create/list/start/stop/delete against containerDisk. | shipped |
+| M1–M3 slice B | Frontend port: VM list + create dialog + lifecycle against the new backend. | shipped |
+| M2 console | Serial console via virt-api `SerialConsole` subresource. | shipped |
+| Multi-cluster | Kubeconfig switcher + UI-driven KinD create/delete with KubeVirt+CDI auto-install and `/dev/kvm` passthrough. | shipped |
+| M1–M3 slice D | Swap containerDisk for DataVolume + PVC so disks persist. | unblocked (CDI now installed) |
+| M4 | Snapshots, clone (snapshot+restore), PVC hot-plug disks. | pending |
+| M5 | Resize, guest-agent exec, bulk. | pending |
+| M6 | Multi-namespace tenancy (optional). | pending |
+| M7 | Ansible inventory from VMIs, file transfer via guest agent. | pending |
+| M8 | Cluster node metrics, optional Kubernetes Events mirror. | pending |
+| M9 | CAPK workload clusters. | pending |
+| M0 Slice 3 | Helm chart for in-cluster deployment. | pending |
 
 ## Tech stack
 
