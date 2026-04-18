@@ -224,6 +224,10 @@ export const listChatModels = () => request('GET', '/chat/models')
 export const listClusters = () => request('GET', '/clusters')
 export const selectCluster = (context) => request('POST', '/clusters/select', { context })
 
+// Host machine check (external tools + kernel sysctls)
+export const hostCheck = () => request('GET', '/host/check')
+export const applyHostSysctls = () => request('POST', '/host/sysctl')
+
 // streamClusterSSE runs a fetch against the supplied path and invokes
 // onEvent for each SSE `data:` line. Resolves on the first `done` event
 // and rejects on `error`. Rejects on non-2xx fetch status too.
