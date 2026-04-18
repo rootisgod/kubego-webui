@@ -76,7 +76,24 @@ func NewRegistry(logger *slog.Logger, kubeconfigPath, namespace string) (*Regist
 
 	current := r.readCurrentContext()
 	if current == "" {
-		return nil, fmt.Errorf("no current context in kubeconfig %s", r.resolvedKubeconfigPath())
+		// kind deletes the current-context entry when removing its owning
+		// cluster without picking a fallback, leaving the file in a
+		// "has contexts, no current" state that would otherwise block
+		// startup. Pick the alphabetically-first context instead.
+		cfg, err := r.loadKubeconfig()
+		if err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(cfg.Contexts))
+		for name := range cfg.Contexts {
+			names = append(names, name)
+		}
+		if len(names) == 0 {
+			return nil, fmt.Errorf("no contexts in kubeconfig %s", r.resolvedKubeconfigPath())
+		}
+		sort.Strings(names)
+		current = names[0]
+		logger.Warn("kubeconfig has no current-context; falling back to first entry", "context", current, "path", r.resolvedKubeconfigPath())
 	}
 	c, err := r.buildForContext(current)
 	if err != nil {
