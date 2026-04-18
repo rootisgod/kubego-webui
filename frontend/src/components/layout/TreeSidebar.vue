@@ -298,9 +298,8 @@ async function executeConfirmed() {
 <template>
   <aside class="w-60 bg-[var(--bg-secondary)] border-r border-[var(--border)] flex-shrink-0 select-none flex flex-col">
     <div class="p-2 flex-1 overflow-y-auto">
-      <!-- Cluster switcher -->
-      <ClusterSwitcher />
-      <hr class="my-1.5 border-[var(--border)]" />
+      <!-- Global nav (not cluster-scoped): templates, schedules, tokens,
+           logs, machine check, app settings. -->
 
       <!-- Cloud-Init -->
       <div
@@ -382,16 +381,6 @@ async function executeConfirmed() {
         <span class="text-sm">Machine Check</span>
       </div>
 
-      <!-- k9s (embedded terminal for cluster management) -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__k9s__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__k9s__')"
-      >
-        <Compass class="w-4 h-4" />
-        <span class="text-sm">k9s</span>
-      </div>
-
       <!-- Settings -->
       <div
         class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
@@ -403,6 +392,10 @@ async function executeConfirmed() {
       </div>
 
       <hr class="my-1.5 border-[var(--border)]" />
+
+      <!-- Cluster switcher anchors the cluster-scoped section: everything
+           below this line (k9s, the VM tree) follows the active context. -->
+      <ClusterSwitcher />
 
       <!-- Cluster node (root of VM tree) -->
       <div
@@ -472,6 +465,17 @@ async function executeConfirmed() {
       </div>
 
       <div v-show="expanded" class="ml-4">
+        <!-- k9s — cluster-scoped utility; sits in the tree alongside VMs
+             because it operates on the active context, same as they do. -->
+        <div
+          class="flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors text-sm"
+          :class="store.selectedNode === '__k9s__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
+          @click="store.selectNode('__k9s__')"
+        >
+          <Compass class="w-3.5 h-3.5 flex-shrink-0" />
+          <span class="truncate">k9s</span>
+        </div>
+
         <!-- New Group button -->
         <button
           class="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors w-full"

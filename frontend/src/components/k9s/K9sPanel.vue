@@ -86,7 +86,9 @@ async function doInstall() {
 
 // Close all sessions when the active cluster changes — k9s was spawned
 // against the previous context and any further navigation would be
-// against the wrong cluster.
+// against the wrong cluster. The sidebar now makes k9s visually
+// cluster-scoped (it sits under the switcher, alongside the VM tree),
+// so "switch cluster = fresh k9s" is expected.
 watch(() => store.activeContext, async (_, prev) => {
   if (prev === undefined) return // initial load
   for (const t of [...tabs.value]) {
