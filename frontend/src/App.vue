@@ -11,6 +11,7 @@ import TreeSidebar from './components/layout/TreeSidebar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import HostPanel from './components/host/HostPanel.vue'
 import MachineCheckPanel from './components/host/MachineCheckPanel.vue'
+import K9sPanel from './components/k9s/K9sPanel.vue'
 import VmDetailPanel from './components/vm/VmDetailPanel.vue'
 import CloudInitPanel from './components/cloudinit/CloudInitPanel.vue'
 import SettingsPanel from './components/settings/SettingsPanel.vue'
@@ -85,6 +86,7 @@ usePolling(() => {
           <ApiTokensPanel v-else-if="store.selectedNode === '__api-tokens__'" />
           <EventLogPanel v-else-if="store.selectedNode === '__events__'" />
           <MachineCheckPanel v-else-if="store.selectedNode === '__machine-check__'" />
+          <K9sPanel v-else-if="store.selectedNode === '__k9s__'" />
           <SettingsPanel v-else-if="store.selectedNode === '__settings__'" />
           <Transition v-else name="fade" mode="out-in">
             <HostPanel v-if="store.selectedNode === null" key="host" />

@@ -10,11 +10,24 @@ export function useWebSocket() {
     return `${proto}//${location.host}/api/v1/vms/${name}/shell/${sessionId}`
   }
 
-  function connect(name, sessionId, onData) {
+  // connect(vmName, sessionId, onData) — VM serial console path, preserved
+  // for the existing ConsoleTerminal callsite.
+  // connect(url, onData) — connect to an arbitrary ws path (used by
+  // K9sTerminal). Detected by treating a leading "/" or full URL as the
+  // first form's URL, since neither is a valid VM name.
+  function connect(arg1, arg2, arg3) {
+    let url, onData
+    if (typeof arg2 === 'function') {
+      url = resolveUrl(arg1)
+      onData = arg2
+    } else {
+      url = getWsUrl(arg1, arg2)
+      onData = arg3
+    }
+
     disconnect()
     error.value = null
 
-    const url = getWsUrl(name, sessionId)
     ws = new WebSocket(url)
     ws.binaryType = 'arraybuffer'
 
@@ -59,6 +72,13 @@ export function useWebSocket() {
       buf[4] = rows & 0xff
       ws.send(buf)
     }
+  }
+
+  function resolveUrl(pathOrUrl) {
+    if (/^wss?:/i.test(pathOrUrl)) return pathOrUrl
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const path = pathOrUrl.startsWith('/') ? pathOrUrl : '/' + pathOrUrl
+    return `${proto}//${location.host}${path}`
   }
 
   function disconnect() {

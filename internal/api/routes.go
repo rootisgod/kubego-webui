@@ -35,6 +35,7 @@ type Server struct {
 	apiLimiter    *apiRateLimiter
 	eventLog      *EventLog
 	shells        *shellSessionStore
+	k9s           *k9sSessionStore
 }
 
 func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
@@ -52,6 +53,7 @@ func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath strin
 		loginLimiter:       newLoginRateLimiter(5, time.Minute),
 		apiLimiter:         newAPIRateLimiter(30, time.Minute, cfg.TrustProxy),
 		shells:             newShellSessionStore(),
+		k9s:                newK9sSessionStore(),
 	}
 	s.ansibleRunner.startFunc = s.startPlaybookRun
 	s.scheduler = newScheduler(s)
@@ -83,6 +85,7 @@ func (s *Server) Shutdown() {
 	s.sessions.Shutdown()
 	s.loginLimiter.Shutdown()
 	s.apiLimiter.Shutdown()
+	s.k9s.closeAll()
 	if s.eventLog != nil {
 		s.eventLog.Close()
 	}
@@ -156,6 +159,13 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	// Host machine check (external tools + kernel sysctls).
 	mux.HandleFunc("GET /api/v1/host/check", s.handleHostCheck)
 	mux.HandleFunc("POST /api/v1/host/sysctl", s.handleHostSysctlApply)
+	mux.HandleFunc("POST /api/v1/host/tools/k9s/install", s.handleK9sInstall)
+
+	// k9s (embedded TUI proxied over a PTY + WebSocket).
+	mux.HandleFunc("POST /api/v1/k9s/sessions", s.handleCreateK9sSession)
+	mux.HandleFunc("GET /api/v1/k9s/sessions", s.handleListK9sSessions)
+	mux.HandleFunc("DELETE /api/v1/k9s/sessions/{sessionId}", s.handleDeleteK9sSession)
+	mux.HandleFunc("GET /api/v1/k9s/sessions/{sessionId}/ws", s.handleK9sWS)
 
 	// System
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)

@@ -227,6 +227,12 @@ export const selectCluster = (context) => request('POST', '/clusters/select', { 
 // Host machine check (external tools + kernel sysctls)
 export const hostCheck = () => request('GET', '/host/check')
 export const applyHostSysctls = () => request('POST', '/host/sysctl')
+export const installK9s = (onEvent) => streamClusterSSE('POST', '/host/tools/k9s/install', undefined, onEvent)
+
+// k9s sessions (PTY-backed terminal proxied over WebSocket)
+export const createK9sSession = () => request('POST', '/k9s/sessions')
+export const listK9sSessions = () => request('GET', '/k9s/sessions')
+export const deleteK9sSession = (id) => request('DELETE', `/k9s/sessions/${id}`)
 
 // streamClusterSSE runs a fetch against the supplied path and invokes
 // onEvent for each SSE `data:` line. Resolves on the first `done` event
