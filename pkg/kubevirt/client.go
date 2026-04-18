@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -114,6 +115,11 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 		return nil, fmt.Errorf("build discovery client: %w", err)
 	}
 
+	dyn, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("build dynamic client: %w", err)
+	}
+
 	ns := cfg.Namespace
 	if ns == "" {
 		ns = inferNamespace(cfg.Kubeconfig)
@@ -128,12 +134,16 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 		"server", restCfg.Host,
 	)
 
-	return &unimplementedClient{
+	stub := &unimplementedClient{
 		logger:    logger,
 		restCfg:   restCfg,
 		kube:      kubeClient,
 		discovery: discovery,
 		namespace: ns,
+	}
+	return &kubevirtClient{
+		unimplementedClient: stub,
+		dyn:                 dyn,
 	}, nil
 }
 

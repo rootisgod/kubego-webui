@@ -2,7 +2,7 @@
 
 A browser UI and REST API for [KubeVirt](https://kubevirt.io/) — drives VMs as Kubernetes resources so a single commodity cluster can carry VMs alongside containers. Forked from [PassGo Web](https://github.com/rootisgod/passgo-webui) and progressively retargeted away from Canonical Multipass.
 
-> **Status: M0 skeleton (pre-alpha).** The binary builds, boots against a cluster, and probes for KubeVirt, but every VM operation returns `ErrNotImplemented`. M1+ wires each method against the real KubeVirt API. See [PLAN.md](PLAN.md) for the full milestone breakdown.
+> **Status: M1–M3 slice A (pre-alpha).** The binary builds, boots against a cluster, and can create / list / start / stop / delete an Ubuntu 24.04 VM end-to-end via `quay.io/containerdisks/ubuntu:24.04` (a containerDisk — ephemeral, no PVC yet). Snapshots, disks, resize, console, exec, transfers, Ansible and the LLM tools still return `ErrNotImplemented`; frontend is still PassGo-shaped. See [PLAN.md](PLAN.md) for the full milestone breakdown.
 
 ## Bare-minimum quickstart on a new machine
 
@@ -118,22 +118,21 @@ CDI_VERSION=v1.59.0 \
 
 > KinD runs KubeVirt in **software emulation** (10–100× slower than KVM, because KinD nodes have no `/dev/kvm`). Fine for wiring and integration tests; don't run real workloads. See PLAN.md §5.
 
-## What works today (M0)
+## What works today
 
 - `go build ./...` and `go vet ./...` clean on Go 1.26.1.
 - Kubernetes config discovery: in-cluster first, then `--kubeconfig` / `$KUBECONFIG` / `~/.kube/config`.
 - Startup discovery probe for `kubevirt.io/v1`; logs, not crashes, when absent.
 - Session + bearer-token auth, rate limiting, event log, config load/save, REST endpoints for every resource the driver exposes.
 - Filesystem-backed helpers for cloud-init templates and Ansible playbooks survive the rewrite.
+- **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR. containerDisk-only for now — disks are ephemeral.
 
 ## What does not work yet
 
 | Area | Status | Milestone |
 |------|--------|-----------|
-| VM list / info | Stubbed (`ErrNotImplemented`) | M1 |
-| VM lifecycle (start/stop/delete) | Stubbed | M2 |
+| Persistent root disks (DataVolume + PVC) | Stubbed — containerDisk only | M3 slice D |
 | Serial console | Routes removed | M2 (virt-api `SerialConsole` proxy) |
-| VM creation | Stubbed | M3 |
 | Snapshots / clone / disks | Stubbed | M4 |
 | Resize / exec / bulk | Stubbed | M5 |
 | Multi-namespace tenancy | Single-namespace only | M6 |
@@ -141,9 +140,9 @@ CDI_VERSION=v1.59.0 \
 | Metrics / Kubernetes Events | Stubbed | M8 |
 | CAPK (workload clusters) | Not in scope | M9 |
 | Helm chart | Missing | M0 Slice 3 |
-| Frontend (Vue app) | Still calls PassGo routes | M0 Slice 3 |
+| Frontend (Vue app) | Still calls PassGo routes | next slice |
 
-The Vue app in `frontend/` builds but renders broken against the current backend — it asks for removed routes (`/mounts`, `/host/resources`, `/recover`). A Slice 3 pass removes those call sites and renames Mounts → Disks.
+The Vue app in `frontend/` builds but renders broken against the current backend — it asks for removed routes (`/mounts`, `/host/resources`, `/recover`) and its VM-create dialog hasn't been wired to the new endpoint. Next slice unbreaks list + create + lifecycle there and renames Mounts → Disks.
 
 ## Development
 
@@ -174,7 +173,8 @@ internal/api/            HTTP handlers and middleware
 internal/config/         App config load/save, password hashing
 pkg/kubevirt/            Driver interface (all VM operations live behind here)
   client.go              NewClient, rest.Config wiring
-  unimplemented.go       M0 stub — returns ErrNotImplemented
+  vms.go                 VM lifecycle via dynamic client (Launch/List/Get/Start/Stop/Delete)
+  unimplemented.go       Stub for methods not yet ported; VM methods now live in vms.go
   types.go               Wire types (VMInfo, DiskInfo, ClusterResources, ...)
   constants.go           Validation helpers, defaults
   cloudinit_files.go     Template read/write/scan (filesystem, not KubeVirt-coupled)
@@ -207,10 +207,11 @@ All endpoints are under `/api/v1/`. Auth via session cookie or `Authorization: B
 
 | Milestone | Scope |
 |-----------|-------|
-| M0 (current) | Driver interface + cluster wiring + CRD probe. Helm + frontend still to go (Slice 3). |
-| M1 | Read-only VM list via informers. |
-| M2 | Lifecycle + serial console via virt-api. |
-| M3 | VM creation with DataVolume + cloud-init Secret. |
+| M0 | Driver interface + cluster wiring + CRD probe. |
+| M1–M3 slice A (current) | VM create/list/start/stop/delete against containerDisk. Backend only. |
+| M1–M3 slice B (next) | Frontend port: wire VM list + create dialog + lifecycle against the new backend. |
+| M1–M3 slice D | Swap containerDisk for DataVolume + PVC so disks persist. |
+| M2 console | Lifecycle + serial console via virt-api. |
 | M4 | Snapshots, clone (snapshot+restore), PVC hot-plug disks. |
 | M5 | Resize, guest-agent exec, bulk. |
 | M6 | Multi-namespace tenancy (optional). |

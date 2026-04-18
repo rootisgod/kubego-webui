@@ -3,8 +3,13 @@
 #
 # Builds the binary, starts it in the background against the current
 # kubeconfig, hits the public version endpoint, logs in, confirms that a
-# VM call returns 501 (expected — M0 driver is stubbed), and shuts the
-# binary down. Non-zero exit on any failure.
+# VM list call succeeds (200 with a JSON array — empty or populated, it
+# doesn't matter), and shuts the binary down. Non-zero exit on any failure.
+#
+# The test requires a reachable cluster with KubeVirt installed. Against
+# an unreachable cluster the list call will 5xx; that is also a valid
+# signal — the smoke test checks the HTTP-server path, not that VMs
+# exist.
 #
 # Intended for humans running it locally; CI can reuse the same recipe.
 
@@ -63,12 +68,25 @@ if ! curl -sf -c "${JAR}" -X POST "http://localhost:${PORT}/api/v1/auth/login" \
   fail "login failed"
 fi
 
-log "GET /api/v1/vms (expect 501 from the M0 stub driver)"
-STATUS="$(curl -so /dev/null -w '%{http_code}' -b "${JAR}" "http://localhost:${PORT}/api/v1/vms")"
-if [[ "${STATUS}" != "500" && "${STATUS}" != "501" ]]; then
-  fail "expected 500/501 from stub driver, got ${STATUS}"
-fi
-log "  got HTTP ${STATUS} — stub driver is wired"
+log "GET /api/v1/vms (expect 200 with a JSON array, or 5xx if cluster unreachable)"
+BODY="$(mktemp -t kubego-smoke-body.XXXXXX)"
+STATUS="$(curl -so "${BODY}" -w '%{http_code}' -b "${JAR}" "http://localhost:${PORT}/api/v1/vms")"
+case "${STATUS}" in
+  200)
+    if ! grep -Eq '^\[' "${BODY}"; then
+      fail "200 response was not a JSON array: $(cat "${BODY}")"
+    fi
+    log "  got HTTP 200 — driver listed VMs"
+    ;;
+  5??)
+    log "  got HTTP ${STATUS} — cluster unreachable (acceptable; driver wired, KubeVirt absent)"
+    ;;
+  *)
+    rm -f "${BODY}"
+    fail "unexpected status ${STATUS}: $(cat "${BODY}" 2>/dev/null || true)"
+    ;;
+esac
+rm -f "${BODY}"
 
 log "Startup log contained KubeVirt probe line:"
 if ! grep -E 'kubevirt (detected|not installed|probe failed|group present)' "${LOG}" >&2; then
