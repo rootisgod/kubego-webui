@@ -51,11 +51,10 @@ This creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, patche
 ### 4. Build the binary and run it
 
 ```bash
-go build -o kubego ./cmd/server
-./kubego --kubeconfig "$HOME/.kube/config" --port 8081
+task run
 ```
 
-Open `http://localhost:8081` (login `admin` / `admin`). The UI is still the placeholder — the real verification is in the logs:
+This builds `./kubego` and runs it against `~/.kube/config` on port 8081. Leave it running; open `http://localhost:8081` (login `admin` / `admin`). The UI is still the placeholder — the real verification is in the logs:
 
 ```
 level=INFO msg="kubevirt driver ready" source=kubeconfig:... namespace=default server=...
@@ -74,7 +73,7 @@ That's the full bare-minimum path. VM-operation endpoints return an `ErrNotImple
 
 ```bash
 # Stop the binary: Ctrl-C in its terminal.
-./scripts/kind-down.sh
+task kind:down
 ```
 
 ## What is it aimed at?

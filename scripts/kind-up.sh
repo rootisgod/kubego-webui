@@ -68,18 +68,10 @@ kubectl -n kubevirt get kubevirt kubevirt -o jsonpath='  version: {.status.obser
 
 cat <<EOF
 
-Ready. Run the KubeGo binary against this cluster with:
+Ready. Next steps:
 
-  go build -o kubego ./cmd/server
-  ./kubego --kubeconfig "\${HOME}/.kube/config" --namespace default --port 8081
-
-Smoke test:
-
-  curl -s http://localhost:8081/api/v1/version
-
-Tear down with:
-
-  scripts/kind-down.sh
-  # or: task kind:down
+  task run         # build + run the KubeGo server against this cluster
+  task smoke       # end-to-end smoke test
+  task kind:down   # tear down the cluster when done
 
 EOF
