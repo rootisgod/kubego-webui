@@ -8,6 +8,7 @@ import ConfirmModal from '../modals/ConfirmModal.vue'
 import CloneVmModal from '../modals/CloneVmModal.vue'
 import GroupNameModal from '../modals/GroupNameModal.vue'
 import MoveToGroupModal from '../modals/MoveToGroupModal.vue'
+import ClusterSwitcher from './ClusterSwitcher.vue'
 import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle } from 'lucide-vue-next'
 import { ref, computed, markRaw } from 'vue'
 
@@ -297,6 +298,10 @@ async function executeConfirmed() {
 <template>
   <aside class="w-60 bg-[var(--bg-secondary)] border-r border-[var(--border)] flex-shrink-0 select-none flex flex-col">
     <div class="p-2 flex-1 overflow-y-auto">
+      <!-- Cluster switcher -->
+      <ClusterSwitcher />
+      <hr class="my-1.5 border-[var(--border)]" />
+
       <!-- Cloud-Init -->
       <div
         class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"

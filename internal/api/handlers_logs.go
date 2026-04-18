@@ -11,7 +11,7 @@ func (s *Server) handleListVMEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	events, err := s.kv.VMEvents(name)
+	events, err := s.kv().VMEvents(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -38,7 +38,7 @@ func (s *Server) handleGetVMPodLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stream, err := s.kv.VMPodLogs(r.Context(), name, tail, false)
+	stream, err := s.kv().VMPodLogs(r.Context(), name, tail, false)
 	if err != nil {
 		// 404 is the right signal here — the UI shows "no pod yet"
 		// rather than a red error banner during VM boot.

@@ -126,6 +126,7 @@ CDI_VERSION=v1.59.0 \
 - Session + bearer-token auth, rate limiting, event log, config load/save, REST endpoints for every resource the driver exposes.
 - Filesystem-backed helpers for cloud-init templates and Ansible playbooks survive the rewrite.
 - **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR. containerDisk-only for now — disks are ephemeral.
+- **Multi-cluster switcher:** `GET /api/v1/clusters` enumerates kubeconfig contexts; `POST /api/v1/clusters/select` flips the active one. `POST /api/v1/clusters/kind` and `DELETE /api/v1/clusters/kind/{name}` shell out to `kind` with SSE progress, auto-selecting the new context on create and falling back to a surviving context on delete. Sidebar header exposes the switcher; in-cluster mode hides KinD ops.
 
 ## What does not work yet
 
@@ -202,6 +203,7 @@ All endpoints are under `/api/v1/`. Auth via session cookie or `Authorization: B
 - `/vms/{name}/recover`, `/vms/purge`, `/host/files`, `/host/home`, `/mounts/open` — **removed**.
 - `/vms/{name}/suspend` — kept as alias for stop.
 - Shell routes dropped for M0; re-added in M2 against virt-api.
+- `/clusters*` — new; kubeconfig context list + select, KinD create/delete with SSE progress streams.
 
 ## Roadmap
 

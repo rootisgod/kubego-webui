@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
-	networks, err := s.kv.ListNetworks()
+	networks, err := s.kv().ListNetworks()
 	if err != nil {
 		// Networks can fail on some platforms; return empty list rather than error
 		writeJSON(w, http.StatusOK, []any{})
@@ -25,7 +25,7 @@ func (s *Server) handleListCloudInitTemplates(w http.ResponseWriter, r *http.Req
 	if s.cfg.CloudInitDir != "" {
 		dirs = append(dirs, s.cfg.CloudInitDir)
 	}
-	templates, err := s.kv.GetAllCloudInitTemplates(dirs)
+	templates, err := s.kv().GetAllCloudInitTemplates(dirs)
 	if err != nil {
 		templates = nil
 	}
@@ -51,7 +51,7 @@ func (s *Server) handleListCloudInitTemplates(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleFindImages(w http.ResponseWriter, r *http.Request) {
-	images, err := s.kv.FindImages()
+	images, err := s.kv().FindImages()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -69,7 +69,7 @@ type versionResponse struct {
 }
 
 func (s *Server) handleClusterResources(w http.ResponseWriter, r *http.Request) {
-	res, err := s.kv.ClusterResources()
+	res, err := s.kv().ClusterResources()
 	if err != nil {
 		s.logger.Warn("cluster resources", "error", err)
 	}
@@ -77,7 +77,7 @@ func (s *Server) handleClusterResources(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleClusterInfo(w http.ResponseWriter, r *http.Request) {
-	info, err := s.kv.ClusterInfo()
+	info, err := s.kv().ClusterInfo()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

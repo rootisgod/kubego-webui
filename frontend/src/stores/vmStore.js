@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { listVMs, listLaunches, listGroups, listProfiles, dismissLaunch, getClusterResources, getClusterInfo } from '../api/client.js'
+import { listVMs, listLaunches, listGroups, listProfiles, dismissLaunch, getClusterResources, getClusterInfo, listClusters } from '../api/client.js'
 import { recordMetrics } from '../composables/useMetricsHistory.js'
 
 export const useVmStore = defineStore('vms', {
@@ -21,6 +21,11 @@ export const useVmStore = defineStore('vms', {
     expandedGroups: {},   // {groupName: bool} local UI state
     // Profiles
     profiles: [],
+    // Clusters (kubeconfig contexts)
+    clusters: [],          // [{ context, current, server, is_kind, in_cluster }]
+    activeContext: '',     // name of the active context
+    inClusterMode: false,  // true when server is running in-cluster (disables kind ops)
+    kindAvailable: false,  // true when `kind` is on PATH on the server
   }),
 
   getters: {
@@ -91,8 +96,8 @@ export const useVmStore = defineStore('vms', {
           }
         }
 
-        // Refresh groups and profiles alongside VMs
-        await Promise.all([this.fetchGroups(), this.fetchProfiles()])
+        // Refresh groups, profiles, and clusters alongside VMs
+        await Promise.all([this.fetchGroups(), this.fetchProfiles(), this.fetchClusters()])
 
         // Record cluster resource metrics
         if (clusterData) {
@@ -108,6 +113,34 @@ export const useVmStore = defineStore('vms', {
       } finally {
         this.loading = false
       }
+    },
+
+    async fetchClusters() {
+      try {
+        const data = await listClusters()
+        this.clusters = data.contexts || []
+        this.activeContext = data.active || ''
+        this.inClusterMode = !!data.in_cluster
+        this.kindAvailable = !!data.kind_available
+      } catch {
+        // Non-critical — keep whatever we had
+      }
+    },
+
+    // Called after select/create/delete. Clears cluster-scoped state and
+    // refetches so the UI reflects the new active context rather than
+    // flashing stale VMs from the previous cluster.
+    async onClusterChanged() {
+      this.vms = []
+      this.launches = []
+      this.clusterInfo = null
+      this.clusterResources = null
+      this.groups = []
+      this.vmGroups = {}
+      this.selectedNode = null
+      this.selectedVms = []
+      await this.fetchClusters()
+      await this.fetchVMs()
     },
 
     async fetchGroups() {

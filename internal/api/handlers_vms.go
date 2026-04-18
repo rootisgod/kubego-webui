@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
-	vms, err := s.kv.ListVMs()
+	vms, err := s.kv().ListVMs()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -25,7 +25,7 @@ func (s *Server) handleGetVM(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	vm, err := s.kv.GetVMInfo(name)
+	vm, err := s.kv().GetVMInfo(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -129,7 +129,7 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 				s.logger.Error("VM launch goroutine panicked", "name", name, "panic", rec)
 			}
 		}()
-		_, err := s.kv.LaunchVM(name, req.Release, req.CPUs, req.MemoryMB, req.DiskGB, cloudInitFile, req.Network)
+		_, err := s.kv().LaunchVM(name, req.Release, req.CPUs, req.MemoryMB, req.DiskGB, cloudInitFile, req.Network)
 		if err != nil {
 			s.logger.Error("VM launch failed", "name", name, "err", err)
 			s.launches.fail(name, err.Error())
@@ -204,7 +204,7 @@ func (s *Server) handleCloneVM(w http.ResponseWriter, r *http.Request) {
 				s.logger.Error("VM clone goroutine panicked", "dest", destName, "panic", rec)
 			}
 		}()
-		_, err := s.kv.CloneVM(source, destName)
+		_, err := s.kv().CloneVM(source, destName)
 		if err != nil {
 			s.logger.Error("VM clone failed", "source", source, "dest", destName, "err", err)
 			s.launches.fail(destName, err.Error())
@@ -213,7 +213,7 @@ func (s *Server) handleCloneVM(w http.ResponseWriter, r *http.Request) {
 		}
 		// If a snapshot was specified, restore the clone to that snapshot's state
 		if req.Snapshot != "" {
-			if err := s.kv.RestoreSnapshot(destName, req.Snapshot); err != nil {
+			if err := s.kv().RestoreSnapshot(destName, req.Snapshot); err != nil {
 				s.logger.Error("clone snapshot restore failed", "dest", destName, "snapshot", req.Snapshot, "err", err)
 				s.launches.fail(destName, "cloned but failed to restore snapshot: "+err.Error())
 				s.eventLog.EmitEvent("vm", "clone", "user", destName, "failed", "snapshot restore failed")
@@ -229,7 +229,7 @@ func (s *Server) handleCloneVM(w http.ResponseWriter, r *http.Request) {
 
 // nextCloneName finds the next available clone name like "source-clone1", "source-clone2", etc.
 func (s *Server) nextCloneName(source string) string {
-	vms, _ := s.kv.ListVMs()
+	vms, _ := s.kv().ListVMs()
 	existing := make(map[string]bool)
 	for _, vm := range vms {
 		existing[vm.Name] = true
@@ -260,7 +260,7 @@ func (s *Server) handleStartVM(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.kv.StartVM(name); err != nil {
+	if err := s.kv().StartVM(name); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "start", name, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -274,7 +274,7 @@ func (s *Server) handleStopVM(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.kv.StopVM(name); err != nil {
+	if err := s.kv().StopVM(name); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "stop", name, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -288,7 +288,7 @@ func (s *Server) handleSuspendVM(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.kv.SuspendVM(name); err != nil {
+	if err := s.kv().SuspendVM(name); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "suspend", name, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -313,7 +313,7 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.kv.DeleteVM(name, req.Purge); err != nil {
+	if err := s.kv().DeleteVM(name, req.Purge); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "delete", name, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -327,7 +327,7 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStartAll(w http.ResponseWriter, r *http.Request) {
-	if err := s.kv.StartAll(); err != nil {
+	if err := s.kv().StartAll(); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "start_all", "", "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -337,7 +337,7 @@ func (s *Server) handleStartAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStopAll(w http.ResponseWriter, r *http.Request) {
-	if err := s.kv.StopAll(); err != nil {
+	if err := s.kv().StopAll(); err != nil {
 		s.eventLog.EmitHTTPEvent(r, "vm", "stop_all", "", "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -364,7 +364,7 @@ func (s *Server) handleExecInVM(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "command is required")
 		return
 	}
-	output, err := s.kv.ExecInVM(name, req.Command)
+	output, err := s.kv().ExecInVM(name, req.Command)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -377,7 +377,7 @@ func (s *Server) handleGetVMConfig(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cfg, err := s.kv.GetVMConfig(name)
+	cfg, err := s.kv().GetVMConfig(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -406,7 +406,7 @@ func (s *Server) handleResizeVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vm, err := s.kv.GetVMInfo(name)
+	vm, err := s.kv().GetVMInfo(name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -428,7 +428,7 @@ func (s *Server) handleResizeVM(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("memory must be at least %d MB", kubevirt.MinResizeRAMMB))
 			return
 		}
-		clusterRes, resErr := s.kv.ClusterResources()
+		clusterRes, resErr := s.kv().ClusterResources()
 		if resErr == nil && int64(*req.MemoryMB) > clusterRes.TotalMemoryMB {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("requested memory (%d MB) exceeds cluster capacity (%d MB)", *req.MemoryMB, clusterRes.TotalMemoryMB))
 			return
@@ -444,7 +444,7 @@ func (s *Server) handleResizeVM(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Use multipass get for the configured disk size (info returns 0 when stopped)
-		vmCfg, cfgErr := s.kv.GetVMConfig(name)
+		vmCfg, cfgErr := s.kv().GetVMConfig(name)
 		if cfgErr == nil && vmCfg.DiskGB > 0 && int64(*req.DiskGB) < vmCfg.DiskGB {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("disk can only be increased, not decreased (current: %d GB)", vmCfg.DiskGB))
 			return
@@ -452,19 +452,19 @@ func (s *Server) handleResizeVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.CPUs != nil {
-		if err := s.kv.SetVMCPUs(name, *req.CPUs); err != nil {
+		if err := s.kv().SetVMCPUs(name, *req.CPUs); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to set CPUs: "+err.Error())
 			return
 		}
 	}
 	if req.MemoryMB != nil {
-		if err := s.kv.SetVMMemory(name, *req.MemoryMB); err != nil {
+		if err := s.kv().SetVMMemory(name, *req.MemoryMB); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to set memory: "+err.Error())
 			return
 		}
 	}
 	if req.DiskGB != nil {
-		if err := s.kv.SetVMDisk(name, *req.DiskGB); err != nil {
+		if err := s.kv().SetVMDisk(name, *req.DiskGB); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to set disk: "+err.Error())
 			return
 		}
@@ -479,7 +479,7 @@ func (s *Server) handleCloudInitStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	status, err := s.kv.GetCloudInitStatus(name)
+	status, err := s.kv().GetCloudInitStatus(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

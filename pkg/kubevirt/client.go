@@ -113,12 +113,23 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 		return nil, fmt.Errorf("build kube rest config: %w", err)
 	}
 
+	ns := cfg.Namespace
+	if ns == "" {
+		ns = inferNamespace(cfg.Kubeconfig)
+	}
+	return buildClientFromRest(logger, restCfg, ns, currentContextName(cfg.Kubeconfig), source)
+}
+
+// buildClientFromRest constructs a Client from a ready-to-use *rest.Config.
+// Shared by NewClient (single-cluster mode) and Registry (multi-cluster).
+// contextName is stored on the client for display and logging only.
+func buildClientFromRest(logger *slog.Logger, restCfg *rest.Config, namespace, contextName, source string) (Client, error) {
 	kubeClient, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return nil, fmt.Errorf("build kubernetes client: %w", err)
 	}
 
-	discovery, err := discovery.NewDiscoveryClientForConfig(restCfg)
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restCfg)
 	if err != nil {
 		return nil, fmt.Errorf("build discovery client: %w", err)
 	}
@@ -128,17 +139,14 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 		return nil, fmt.Errorf("build dynamic client: %w", err)
 	}
 
-	ns := cfg.Namespace
-	if ns == "" {
-		ns = inferNamespace(cfg.Kubeconfig)
-	}
-	if ns == "" {
-		ns = "default"
+	if namespace == "" {
+		namespace = "default"
 	}
 
 	logger.Info("kubevirt driver ready",
 		"source", source,
-		"namespace", ns,
+		"context", contextName,
+		"namespace", namespace,
 		"server", restCfg.Host,
 	)
 
@@ -146,9 +154,9 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 		logger:      logger,
 		restCfg:     restCfg,
 		kube:        kubeClient,
-		discovery:   discovery,
-		namespace:   ns,
-		kubeContext: currentContextName(cfg.Kubeconfig),
+		discovery:   discoveryClient,
+		namespace:   namespace,
+		kubeContext: contextName,
 	}
 	return &kubevirtClient{
 		unimplementedClient: stub,

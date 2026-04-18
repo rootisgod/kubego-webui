@@ -494,7 +494,7 @@ RULES:
 		sb.WriteString("MODE: READ-ONLY. You can only view information. All state-changing actions are disabled.\n\n")
 	}
 
-	vms, err := s.kv.ListVMs()
+	vms, err := s.kv().ListVMs()
 	if err != nil {
 		sb.WriteString("CURRENT VM STATE: Unable to fetch VMs: " + err.Error() + "\n")
 		return sb.String()
@@ -553,7 +553,7 @@ RULES:
 	if s.cfg.CloudInitDir != "" {
 		dirs = append(dirs, s.cfg.CloudInitDir)
 	}
-	templates, _ := s.kv.GetAllCloudInitTemplates(dirs)
+	templates, _ := s.kv().GetAllCloudInitTemplates(dirs)
 	entries, _ := s.builtinTemplatesFS.ReadDir("cloud-init")
 	for _, entry := range entries {
 		if !entry.IsDir() {

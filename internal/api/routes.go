@@ -13,7 +13,7 @@ import (
 )
 
 type Server struct {
-	kv                 kubevirt.Client
+	clusters           *kubevirt.Registry
 	cfg                *config.Config
 	configPath         string // path to the loaded config file — all Save() calls must use this, not DefaultConfigPath
 	logger             *slog.Logger
@@ -37,9 +37,9 @@ type Server struct {
 	shells        *shellSessionStore
 }
 
-func NewServer(kv kubevirt.Client, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
+func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
 	s := &Server{
-		kv:                 kv,
+		clusters:           clusters,
 		cfg:                cfg,
 		configPath:         configPath,
 		logger:             logger,
@@ -69,6 +69,13 @@ func NewServer(kv kubevirt.Client, cfg *config.Config, configPath string, logger
 	s.ansibleRunner.eventLog = el
 
 	return s
+}
+
+// kv returns the Client for the currently-selected cluster. Handlers
+// always call s.kv() per-request rather than caching — the active
+// cluster can change under them via /api/v1/clusters/select.
+func (s *Server) kv() kubevirt.Client {
+	return s.clusters.Active()
 }
 
 func (s *Server) Shutdown() {
@@ -139,6 +146,12 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/vms/{name}/disks", s.handleListDisks)
 	mux.HandleFunc("POST /api/v1/vms/{name}/disks", s.handleAttachDisk)
 	mux.HandleFunc("DELETE /api/v1/vms/{name}/disks", s.handleDetachDisk)
+
+	// Clusters (kubeconfig contexts + KinD lifecycle)
+	mux.HandleFunc("GET /api/v1/clusters", s.handleListClusters)
+	mux.HandleFunc("POST /api/v1/clusters/select", s.handleSelectCluster)
+	mux.HandleFunc("POST /api/v1/clusters/kind", s.handleKindCreate)
+	mux.HandleFunc("DELETE /api/v1/clusters/kind/{name}", s.handleKindDelete)
 
 	// System
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)

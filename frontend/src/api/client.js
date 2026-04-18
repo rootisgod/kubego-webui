@@ -220,6 +220,62 @@ export const getChatConfig = () => request('GET', '/chat/config')
 export const updateChatConfig = (cfg) => request('PUT', '/chat/config', cfg)
 export const listChatModels = () => request('GET', '/chat/models')
 
+// Clusters (kubeconfig contexts + KinD)
+export const listClusters = () => request('GET', '/clusters')
+export const selectCluster = (context) => request('POST', '/clusters/select', { context })
+
+// streamClusterSSE runs a fetch against the supplied path and invokes
+// onEvent for each SSE `data:` line. Resolves on the first `done` event
+// and rejects on `error`. Rejects on non-2xx fetch status too.
+export async function streamClusterSSE(method, path, body, onEvent) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  }
+  if (body !== undefined) opts.body = JSON.stringify(body)
+  const res = await fetch(API_BASE + path, opts)
+  if (res.status === 401) fireUnauthorized(path)
+  if (!res.ok) {
+    const text = await res.text()
+    let msg
+    try { msg = JSON.parse(text).error } catch { msg = text }
+    throw new ApiError(res.status, msg)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) return
+    buf += decoder.decode(value, { stream: true })
+    // SSE frames are separated by blank lines.
+    let idx
+    while ((idx = buf.indexOf('\n\n')) !== -1) {
+      const frame = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      for (const line of frame.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload) continue
+        try {
+          const ev = JSON.parse(payload)
+          onEvent(ev)
+          if (ev.type === 'done') return ev
+          if (ev.type === 'error') throw new Error(ev.error || 'unknown error')
+        } catch (e) {
+          if (e instanceof SyntaxError) continue
+          throw e
+        }
+      }
+    }
+  }
+}
+
+export const createKindCluster = (name, onEvent) =>
+  streamClusterSSE('POST', '/clusters/kind', { name }, onEvent)
+export const deleteKindCluster = (name, onEvent) =>
+  streamClusterSSE('DELETE', `/clusters/kind/${encodeURIComponent(name)}`, undefined, onEvent)
+
 // Auth
 export const login = (username, password) => request('POST', '/auth/login', { username, password })
 export const logout = () => request('POST', '/auth/logout')

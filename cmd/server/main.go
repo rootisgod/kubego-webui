@@ -95,22 +95,20 @@ func main() {
 		cfg.Password = hashed
 	}
 
-	// Build the KubeVirt driver. Failure here means we cannot reach any
+	// Build the cluster registry. Failure here means we cannot reach any
 	// Kubernetes API at all (no in-cluster config, no kubeconfig) — that's
-	// a hard error because KubeGo is useless without a cluster.
-	kvClient, err := kubevirt.NewClient(logger, kubevirt.Config{
-		Kubeconfig: kubeconfig,
-		Namespace:  namespace,
-	})
+	// a hard error because KubeGo is useless without a cluster. Additional
+	// contexts discovered in the kubeconfig are built lazily on selection.
+	clusters, err := kubevirt.NewRegistry(logger, kubeconfig, namespace)
 	if err != nil {
-		logger.Error("failed to initialise KubeVirt driver", "err", err)
+		logger.Error("failed to initialise cluster registry", "err", err)
 		os.Exit(1)
 	}
 
 	// Startup CRD probe — a missing KubeVirt install is recoverable (the UI
 	// shows the empty state instead of crash-looping) so we only log here.
 	probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := kvClient.ProbeKubeVirt(probeCtx); err != nil {
+	if err := clusters.Active().ProbeKubeVirt(probeCtx); err != nil {
 		logger.Warn("kubevirt probe failed", "err", err)
 	}
 	probeCancel()
@@ -123,7 +121,7 @@ func main() {
 		staticFS = spaHandler(http.FileServerFS(distFS), distFS)
 	}
 
-	srv := api.NewServer(kvClient, cfg, configPath, logger, Version, BuildTime, GitCommit, builtinTemplatesFS)
+	srv := api.NewServer(clusters, cfg, configPath, logger, Version, BuildTime, GitCommit, builtinTemplatesFS)
 	handler := srv.Handler(staticFS)
 
 	listen := cfg.Listen
@@ -133,7 +131,8 @@ func main() {
 
 	fmt.Printf("KubeGo %s\n", Version)
 	fmt.Printf("Config: %s\n", configPath)
-	fmt.Printf("Namespace: %s\n", kvClient.Namespace())
+	fmt.Printf("Namespace: %s\n", clusters.Active().Namespace())
+	fmt.Printf("Active context: %s\n", clusters.ActiveContext())
 	fmt.Printf("Listening on http://0.0.0.0%s\n", listen)
 
 	// Long-lived writes (WebSockets, SSE) preclude a blanket WriteTimeout;

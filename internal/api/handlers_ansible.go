@@ -15,7 +15,7 @@ type inventoryHost struct {
 // generateInventoryYAML builds an Ansible inventory YAML string from running VMs.
 // filterVMs limits to specific VM names (nil/empty = all running VMs).
 func (s *Server) generateInventoryYAML(filterVMs []string, user, sshKeyPath string) (string, error) {
-	vms, err := s.kv.ListVMs()
+	vms, err := s.kv().ListVMs()
 	if err != nil {
 		return "", fmt.Errorf("failed to list VMs: %w", err)
 	}

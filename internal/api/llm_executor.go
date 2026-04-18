@@ -31,7 +31,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 
 	switch toolName {
 	case "list_vms":
-		vms, err := s.kv.ListVMs()
+		vms, err := s.kv().ListVMs()
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -44,7 +44,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		vm, err := s.kv.GetVMInfo(args.Name)
+		vm, err := s.kv().GetVMInfo(args.Name)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -57,7 +57,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.StartVM(args.Name); err != nil {
+		if err := s.kv().StartVM(args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"started","vm":"%s"}`, args.Name), nil
@@ -69,7 +69,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.StopVM(args.Name); err != nil {
+		if err := s.kv().StopVM(args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"stopped","vm":"%s"}`, args.Name), nil
@@ -81,7 +81,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.SuspendVM(args.Name); err != nil {
+		if err := s.kv().SuspendVM(args.Name); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"suspended","vm":"%s"}`, args.Name), nil
@@ -94,7 +94,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.DeleteVM(args.Name, args.Purge); err != nil {
+		if err := s.kv().DeleteVM(args.Name, args.Purge); err != nil {
 			return toolError(err), nil
 		}
 		action := "deleted"
@@ -156,7 +156,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		}
 		done := make(chan launchResult, 1)
 		go func() {
-			name, err := s.kv.LaunchVM(args.Name, args.Image, args.CPUs, args.MemoryMB, args.DiskGB, cloudInitFile, "")
+			name, err := s.kv().LaunchVM(args.Name, args.Image, args.CPUs, args.MemoryMB, args.DiskGB, cloudInitFile, "")
 			// Clean up temp file
 			if tmpCloudInit != "" {
 				os.Remove(tmpCloudInit)
@@ -190,7 +190,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		output, err := s.kv.ExecInVMStreaming(ctx, args.VM, args.Command, progress)
+		output, err := s.kv().ExecInVMStreaming(ctx, args.VM, args.Command, progress)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -205,7 +205,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.CreateSnapshot(args.VM, args.Name, args.Comment); err != nil {
+		if err := s.kv().CreateSnapshot(args.VM, args.Name, args.Comment); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"created","vm":"%s","snapshot":"%s"}`, args.VM, args.Name), nil
@@ -217,7 +217,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		snaps, err := s.kv.ListSnapshots(args.VM)
+		snaps, err := s.kv().ListSnapshots(args.VM)
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -231,7 +231,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.RestoreSnapshot(args.VM, args.Snapshot); err != nil {
+		if err := s.kv().RestoreSnapshot(args.VM, args.Snapshot); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"restored","vm":"%s","snapshot":"%s"}`, args.VM, args.Snapshot), nil
@@ -244,13 +244,13 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			return toolError(fmt.Errorf("invalid arguments: %w", err)), nil
 		}
-		if err := s.kv.DeleteSnapshot(args.VM, args.Snapshot); err != nil {
+		if err := s.kv().DeleteSnapshot(args.VM, args.Snapshot); err != nil {
 			return toolError(err), nil
 		}
 		return fmt.Sprintf(`{"status":"deleted","vm":"%s","snapshot":"%s"}`, args.VM, args.Snapshot), nil
 
 	case "list_networks":
-		nets, err := s.kv.ListNetworks()
+		nets, err := s.kv().ListNetworks()
 		if err != nil {
 			return toolError(err), nil
 		}
@@ -365,7 +365,7 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		if s.cfg.CloudInitDir != "" {
 			dirs = append(dirs, s.cfg.CloudInitDir)
 		}
-		templates, err := s.kv.GetAllCloudInitTemplates(dirs)
+		templates, err := s.kv().GetAllCloudInitTemplates(dirs)
 		if err != nil {
 			templates = nil
 		}

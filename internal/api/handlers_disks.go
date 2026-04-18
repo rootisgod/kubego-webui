@@ -16,7 +16,7 @@ func (s *Server) handleListDisks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	disks, err := s.kv.ListDisks(name)
+	disks, err := s.kv().ListDisks(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -44,7 +44,7 @@ func (s *Server) handleAttachDisk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "source and target are required")
 		return
 	}
-	if err := s.kv.AttachDisk(vmName, req.Source, req.Target); err != nil {
+	if err := s.kv().AttachDisk(vmName, req.Source, req.Target); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -65,7 +65,7 @@ func (s *Server) handleDetachDisk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "target is required")
 		return
 	}
-	if err := s.kv.DetachDisk(vmName, req.Target); err != nil {
+	if err := s.kv().DetachDisk(vmName, req.Target); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

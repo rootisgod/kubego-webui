@@ -158,7 +158,7 @@ func (s *Server) handleShellWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.shells.unbind(sessionID)
 
-	stream, err := s.kv.Console(ctx, name)
+	stream, err := s.kv().Console(ctx, name)
 	if err != nil {
 		s.logger.Error("open console failed", "vm", name, "err", err)
 		closeWS(clientWS, websocket.CloseInternalServerErr, err.Error())
