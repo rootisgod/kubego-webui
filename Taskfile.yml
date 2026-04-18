@@ -11,8 +11,8 @@ vars:
 
 tasks:
   default:
-    desc: Build the project (backend only — the frontend is still being ported)
-    deps: [build-backend]
+    desc: Build the project (frontend + backend with embedded assets)
+    deps: [build]
 
   # --- Frontend ---
 
@@ -27,11 +27,7 @@ tasks:
       - node_modules/.package-lock.json
 
   frontend-build:
-    desc: |
-      Build frontend (produces frontend/dist/).
-      Note: the Vue app still calls PassGo's multipass endpoints and will
-      show errors against the current KubeGo backend. Re-wiring lands in
-      M0 Slice 3.
+    desc: Build frontend (produces frontend/dist/).
     dir: frontend
     deps: [frontend-install]
     cmds:
@@ -81,8 +77,8 @@ tasks:
   # --- Run ---
 
   run:
-    desc: Build and run the backend against ~/.kube/config on :8081
-    deps: [build-backend]
+    desc: Build (frontend + backend) and run against ~/.kube/config on :8081
+    deps: [build]
     cmds:
       - ./kubego --kubeconfig "$HOME/.kube/config" --port 8081
 
@@ -92,10 +88,7 @@ tasks:
       - go run ./cmd/server --kubeconfig "$HOME/.kube/config" --port 8081
 
   dev-frontend:
-    desc: |
-      Run the Vite dev server with API proxy.
-      Currently shows errors until the frontend is ported to KubeGo routes
-      (M0 Slice 3).
+    desc: Run the Vite dev server with API proxy (hot-reload, paired with `task dev-backend`).
     dir: frontend
     deps: [frontend-install]
     cmds:
