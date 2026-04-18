@@ -155,14 +155,17 @@ task build-backend       Build kubego without rebuilding the frontend
 task run                 Build + run against ~/.kube/config
 task dev-backend         go run ./cmd/server (no binary produced)
 task smoke               End-to-end smoke test
+task kind:install        Install the kind CLI
 task kind:up             Create kubego-dev KinD cluster + KubeVirt + CDI
 task kind:down           Delete kubego-dev KinD cluster
 task kind:reset          Delete and recreate
+task install-kubectl     Install the kubectl CLI
+task install-k9s         Install the k9s CLI
 task test                go test ./... -v
 task clean               Remove all build artifacts
 ```
 
-All Taskfile entries are shell commands; `cat Taskfile.yml` if you want the plain invocation.
+All Taskfile entries are shell commands; `cat Taskfile.yml` if you want the plain invocation. The `install-*` and `kind:install` tasks each call a script in `scripts/` directly — you can run those without Task installed.
 
 ### Layout
 
