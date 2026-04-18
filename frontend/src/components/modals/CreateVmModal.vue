@@ -3,11 +3,29 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useVmStore } from '../../stores/vmStore.js'
 import { useToastStore } from '../../stores/toastStore.js'
 import * as api from '../../api/client.js'
-import { Loader2, Save } from 'lucide-vue-next'
+import { Loader2, Save, Zap, Sliders } from 'lucide-vue-next'
 
 const emit = defineEmits(['close'])
 const store = useVmStore()
 const toasts = useToastStore()
+
+// Quick mode is the Multipass-style "just launch" surface: name, image,
+// size preset, go. Advanced exposes the full form. Start in Quick —
+// users who need more can reveal it, users who don't never see the
+// cloud-init / network / playbook / profile machinery at all.
+const mode = ref('quick') // 'quick' | 'advanced'
+
+// Size presets. "Medium" is the current default and matches what the
+// form used before this change, so switching modes is non-destructive.
+const sizePresets = [
+  { id: 'small',  label: 'Small',  cpus: 1, memoryMB: 1024, diskGB: 8,
+    hint: '1 CPU · 1 GB · 8 GB' },
+  { id: 'medium', label: 'Medium', cpus: 2, memoryMB: 2048, diskGB: 16,
+    hint: '2 CPU · 2 GB · 16 GB' },
+  { id: 'large',  label: 'Large',  cpus: 4, memoryMB: 4096, diskGB: 32,
+    hint: '4 CPU · 4 GB · 32 GB' },
+]
+const selectedSize = ref('medium')
 
 const name = ref('')
 const release = ref('')
@@ -19,6 +37,26 @@ const network = ref('')
 const playbook = ref('')
 const submitting = ref(false)
 const selectedProfile = ref('')
+
+// Applying a size preset mutates the three resource refs; edits in
+// Advanced mode clear the selection so we don't lie about which preset
+// is active.
+function applySize(id) {
+  const p = sizePresets.find(s => s.id === id)
+  if (!p) return
+  selectedSize.value = id
+  cpus.value = p.cpus
+  memoryMB.value = p.memoryMB
+  diskGB.value = p.diskGB
+}
+
+watch([cpus, memoryMB, diskGB], ([c, m, d]) => {
+  const p = sizePresets.find(s => s.id === selectedSize.value)
+  if (!p) return
+  if (p.cpus !== c || p.memoryMB !== m || p.diskGB !== d) {
+    selectedSize.value = '' // user deviated — no preset active
+  }
+})
 
 const images = ref([])
 const loadingImages = ref(true)
@@ -91,6 +129,13 @@ onMounted(async () => {
       defaultMemory = defaults.memory_mb
       defaultDisk = defaults.disk_gb
     }
+    // Highlight a preset button if the user's defaults happen to match
+    // one; otherwise show them as "custom" (no highlight, Advanced
+    // fields carry the actual numbers).
+    const match = sizePresets.find(p =>
+      p.cpus === cpus.value && p.memoryMB === memoryMB.value && p.diskGB === diskGB.value,
+    )
+    selectedSize.value = match?.id || ''
     images.value = Array.isArray(imgs) ? imgs : []
     networks.value = Array.isArray(nets) ? nets : []
     templates.value = Array.isArray(tmpls) ? tmpls : []
@@ -170,9 +215,86 @@ async function saveAsProfile() {
     <div class="fixed inset-0 z-40 flex items-center justify-center">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
       <div class="relative bg-[var(--bg-surface)] rounded-lg border border-[var(--border)] p-6 max-w-lg w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <h3 class="text-lg font-semibold mb-6">Create Virtual Machine</h3>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold">Launch Virtual Machine</h3>
+          <!-- Mode toggle. Quick is the happy path; Advanced reveals
+               cloud-init, networks, playbooks, profiles, manual
+               resource inputs. Values carry across both modes. -->
+          <div class="flex items-center gap-0.5 p-0.5 rounded bg-[var(--bg-primary)] border border-[var(--border)] text-xs">
+            <button
+              class="flex items-center gap-1 px-2 py-1 rounded transition-colors"
+              :class="mode === 'quick'
+                ? 'bg-[var(--accent)] text-white'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+              @click="mode = 'quick'"
+            >
+              <Zap class="w-3 h-3" />
+              Quick
+            </button>
+            <button
+              class="flex items-center gap-1 px-2 py-1 rounded transition-colors"
+              :class="mode === 'advanced'
+                ? 'bg-[var(--accent)] text-white'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+              @click="mode = 'advanced'"
+            >
+              <Sliders class="w-3 h-3" />
+              Advanced
+            </button>
+          </div>
+        </div>
 
-        <div class="space-y-4">
+        <!-- Quick mode: the Multipass-style "name, image, size, go" row.
+             Keeps only the three questions that actually require
+             answers; everything else lives in Advanced. -->
+        <div v-if="mode === 'quick'" class="space-y-4">
+          <div>
+            <label class="block text-xs text-[var(--text-secondary)] mb-1">Name</label>
+            <input
+              v-model="name"
+              type="text"
+              :placeholder="placeholder"
+              class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+            />
+            <p class="text-xs text-[var(--text-secondary)] mt-1">Leave empty for an auto-generated name</p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[var(--text-secondary)] mb-1">Image</label>
+            <select
+              v-model="release"
+              :disabled="loadingImages"
+              class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+            >
+              <option v-if="loadingImages" value="" disabled>Loading images…</option>
+              <option v-for="img in imageList" :key="img.name" :value="img.name">{{ imageLabel(img) }}</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[var(--text-secondary)] mb-1">Size</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                v-for="p in sizePresets"
+                :key="p.id"
+                class="flex flex-col items-center gap-0.5 py-2 px-1 rounded border transition-colors"
+                :class="selectedSize === p.id
+                  ? 'bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]'
+                  : 'bg-[var(--bg-primary)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50'"
+                @click="applySize(p.id)"
+              >
+                <span class="text-sm font-medium">{{ p.label }}</span>
+                <span class="text-[10px] text-[var(--muted)]">{{ p.hint }}</span>
+              </button>
+            </div>
+            <p v-if="!selectedSize" class="text-[11px] text-[var(--text-secondary)] mt-1">
+              Custom: {{ cpus }} CPU · {{ Math.round(memoryMB / 1024 * 10) / 10 }} GB · {{ diskGB }} GB (edit in Advanced)
+            </p>
+          </div>
+        </div>
+
+        <!-- Advanced mode: the full form. -->
+        <div v-else class="space-y-4">
           <!-- Profile -->
           <div v-if="store.profiles.length > 0">
             <label class="block text-xs text-[var(--text-secondary)] mb-1">Profile</label>
@@ -329,7 +451,7 @@ async function saveAsProfile() {
 
         <div class="flex justify-between gap-3 mt-6">
           <button
-            v-if="!showSaveProfile"
+            v-if="mode === 'advanced' && !showSaveProfile"
             @click="showSaveProfile = true"
             class="flex items-center gap-1.5 px-3 py-2 text-xs rounded bg-[var(--bg-hover)] hover:bg-[var(--border)] transition-colors text-[var(--text-secondary)]"
           >
@@ -348,7 +470,7 @@ async function saveAsProfile() {
               class="flex items-center gap-2 px-4 py-2 text-sm rounded bg-[var(--accent)] hover:bg-blue-600 transition-colors disabled:opacity-40"
             >
               <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
-              Create
+              Launch
             </button>
           </div>
         </div>
