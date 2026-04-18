@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "PassGo Web API",
-    "description": "Complete API collection for PassGo Web — a management interface for Canonical Multipass.\n\nSetup:\n1. Create an API token in the PassGo Web UI (API Tokens panel)\n2. Set the `token` variable to your token value\n3. Set `base_url` to your server address (default: http://localhost:8080)",
+    "description": "Complete API collection for PassGo Web — a management interface for Canonical Multipass.\n\nSetup:\n1. Create an API token in the PassGo Web UI (API Tokens panel)\n2. Set the `token` variable to your token value\n3. Set `base_url` to your server address (default: http://localhost:8081)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -17,7 +17,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:8080",
+      "value": "http://localhost:8081",
       "type": "string"
     },
     {

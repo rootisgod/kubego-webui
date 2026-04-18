@@ -52,10 +52,10 @@ This creates a `kubego-dev` cluster, installs the KubeVirt operator + CR, patche
 
 ```bash
 go build -o kubego ./cmd/server
-./kubego --kubeconfig "$HOME/.kube/config" --port 8080
+./kubego --kubeconfig "$HOME/.kube/config" --port 8081
 ```
 
-Open `http://localhost:8080` (login `admin` / `admin`). The UI is still the placeholder — the real verification is in the logs:
+Open `http://localhost:8081` (login `admin` / `admin`). The UI is still the placeholder — the real verification is in the logs:
 
 ```
 level=INFO msg="kubevirt driver ready" source=kubeconfig:... namespace=default server=...
@@ -65,7 +65,7 @@ level=INFO msg="kubevirt detected" group=kubevirt.io version=v1 ...
 Or hit the API directly:
 
 ```bash
-curl -s localhost:8080/api/v1/version
+curl -s localhost:8081/api/v1/version
 ```
 
 That's the full bare-minimum path. VM-operation endpoints return an `ErrNotImplemented` error — that is the M0 state; M1+ wires them against real VM CRs. See the [Roadmap](#roadmap) below.

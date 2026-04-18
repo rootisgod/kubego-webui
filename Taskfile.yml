@@ -81,15 +81,15 @@ tasks:
   # --- Run ---
 
   run:
-    desc: Build and run the backend against ~/.kube/config on :8080
+    desc: Build and run the backend against ~/.kube/config on :8081
     deps: [build-backend]
     cmds:
-      - ./kubego --kubeconfig "$HOME/.kube/config" --port 8080
+      - ./kubego --kubeconfig "$HOME/.kube/config" --port 8081
 
   dev-backend:
-    desc: Run the Go backend with `go run` against ~/.kube/config on :8080
+    desc: Run the Go backend with `go run` against ~/.kube/config on :8081
     cmds:
-      - go run ./cmd/server --kubeconfig "$HOME/.kube/config" --port 8080
+      - go run ./cmd/server --kubeconfig "$HOME/.kube/config" --port 8081
 
   dev-frontend:
     desc: |
@@ -102,6 +102,11 @@ tasks:
       - npm run dev
 
   # --- KinD dev cluster ---
+
+  kind:install:
+    desc: Install the kind CLI (override with KIND_VERSION, KIND_INSTALL_DIR)
+    cmds:
+      - ./scripts/kind-install.sh
 
   kind:up:
     desc: Create a kubego-dev KinD cluster and install KubeVirt + CDI
@@ -118,6 +123,18 @@ tasks:
     cmds:
       - ./scripts/kind-down.sh
       - ./scripts/kind-up.sh
+
+  # --- CLI tooling ---
+
+  install-kubectl:
+    desc: Install the kubectl CLI (override with KUBECTL_VERSION, KUBECTL_INSTALL_DIR)
+    cmds:
+      - ./scripts/kubectl-install.sh
+
+  install-k9s:
+    desc: Install the k9s CLI (override with K9S_VERSION, K9S_INSTALL_DIR)
+    cmds:
+      - ./scripts/k9s-install.sh
 
   # --- Tests ---
 

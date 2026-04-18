@@ -71,11 +71,11 @@ cat <<EOF
 Ready. Run the KubeGo binary against this cluster with:
 
   go build -o kubego ./cmd/server
-  ./kubego --kubeconfig "\${HOME}/.kube/config" --namespace default --port 8080
+  ./kubego --kubeconfig "\${HOME}/.kube/config" --namespace default --port 8081
 
 Smoke test:
 
-  curl -s http://localhost:8080/api/v1/version
+  curl -s http://localhost:8081/api/v1/version
 
 Tear down with:
 

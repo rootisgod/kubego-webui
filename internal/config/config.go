@@ -381,7 +381,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	if cfg.Listen == "" {
-		cfg.Listen = ":8080"
+		cfg.Listen = ":8081"
 	}
 	if cfg.CloudInitDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -482,7 +482,7 @@ func CreateDefault(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Listen:       ":8080",
+		Listen:       ":8081",
 		CloudInitDir: cloudInitDir,
 		Username:     "admin",
 		Password:     hashed,

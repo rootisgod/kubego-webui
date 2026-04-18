@@ -224,7 +224,7 @@ async function doDelete() {
             Include your API token in the <code class="bg-[var(--bg-primary)] px-1 py-0.5 rounded text-xs">Authorization</code> header as a Bearer token:
           </p>
           <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-4 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  http://localhost:8080/api/v1/vms</pre>
+  http://localhost:8081/api/v1/vms</pre>
         </section>
 
         <!-- Quick Examples -->
@@ -235,22 +235,22 @@ async function doDelete() {
             <div>
               <h4 class="text-sm font-medium text-[var(--text-primary)] mb-1.5">List all VMs</h4>
               <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  http://localhost:8080/api/v1/vms</pre>
+  http://localhost:8081/api/v1/vms</pre>
             </div>
 
             <div>
               <h4 class="text-sm font-medium text-[var(--text-primary)] mb-1.5">Get VM details</h4>
               <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  http://localhost:8080/api/v1/vms/my-vm</pre>
+  http://localhost:8081/api/v1/vms/my-vm</pre>
             </div>
 
             <div>
               <h4 class="text-sm font-medium text-[var(--text-primary)] mb-1.5">Start / Stop a VM</h4>
               <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  http://localhost:8080/api/v1/vms/my-vm/start
+  http://localhost:8081/api/v1/vms/my-vm/start
 
 curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  http://localhost:8080/api/v1/vms/my-vm/stop</pre>
+  http://localhost:8081/api/v1/vms/my-vm/stop</pre>
             </div>
 
             <div>
@@ -258,13 +258,13 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" \
               <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" \
   -H "Content-Type: application/json" \
   -d '{"name":"web-01","release":"24.04","cpus":2,"memory_mb":2048,"disk_gb":20}' \
-  http://localhost:8080/api/v1/vms</pre>
+  http://localhost:8081/api/v1/vms</pre>
             </div>
 
             <div>
               <h4 class="text-sm font-medium text-[var(--text-primary)] mb-1.5">List snapshots</h4>
               <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  http://localhost:8080/api/v1/vms/my-vm/snapshots</pre>
+  http://localhost:8081/api/v1/vms/my-vm/snapshots</pre>
             </div>
 
             <div>
@@ -272,7 +272,7 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" \
               <pre class="bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-xs font-mono text-[var(--text-primary)] overflow-x-auto">curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" \
   -H "Content-Type: application/json" \
   -d '{"command":"uname -a"}' \
-  http://localhost:8080/api/v1/vms/my-vm/exec</pre>
+  http://localhost:8081/api/v1/vms/my-vm/exec</pre>
             </div>
 
           </div>

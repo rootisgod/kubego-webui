@@ -136,7 +136,7 @@ func TestLoad_FillsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if c.Listen != ":8080" {
+	if c.Listen != ":8081" {
 		t.Errorf("Listen default: got %q", c.Listen)
 	}
 	if c.Username != "admin" {
