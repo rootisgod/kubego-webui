@@ -89,7 +89,14 @@ func NewRegistry(logger *slog.Logger, kubeconfigPath, namespace string) (*Regist
 			names = append(names, name)
 		}
 		if len(names) == 0 {
-			return nil, fmt.Errorf("no contexts in kubeconfig %s", r.resolvedKubeconfigPath())
+			// No contexts anywhere — still boot, so the UI can create one
+			// via the cluster switcher. Handlers that need a live Client
+			// get ErrNoActiveCluster from noClusterClient until Select()
+			// installs a real one.
+			logger.Warn("no contexts in kubeconfig — booting in no-cluster mode; create one via the cluster switcher", "path", r.resolvedKubeconfigPath())
+			r.active = NoActiveClusterContext
+			r.clients[NoActiveClusterContext] = noClusterClient{}
+			return r, nil
 		}
 		sort.Strings(names)
 		current = names[0]
@@ -198,11 +205,17 @@ func (r *Registry) Select(contextName string) error {
 
 // Invalidate drops the cached Client for a context (used after a context
 // is deleted, e.g. `kind delete cluster`). If the invalidated context
-// was active, callers should Select() a fallback context next.
+// was active, the registry falls back to the no-cluster stub so handlers
+// get a clear error instead of a nil Client. Callers may Select()
+// another context afterwards.
 func (r *Registry) Invalidate(contextName string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.clients, contextName)
+	if r.active == contextName {
+		r.active = NoActiveClusterContext
+		r.clients[NoActiveClusterContext] = noClusterClient{}
+	}
 }
 
 // KubeconfigPath returns the path the registry reads. Useful for kind

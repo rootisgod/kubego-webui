@@ -62,8 +62,12 @@ export const useVmStore = defineStore('vms', {
       try {
         this.loading = true
         this.error = null
+        // A broken or empty active cluster makes listVMs 500. Catch it
+        // here instead of rejecting the whole Promise.all, so fetchGroups/
+        // fetchProfiles/fetchClusters below still run and the cluster
+        // switcher stays usable.
         const [data, launchData, clusterData, clusterMeta] = await Promise.all([
-          listVMs(),
+          listVMs().catch(e => { this.error = e.message; return [] }),
           listLaunches().catch(() => []),
           getClusterResources().catch(() => null),
           getClusterInfo().catch(() => null),
