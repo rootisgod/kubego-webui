@@ -130,7 +130,8 @@ task kind:up
 - **First-VM backend slice:** `POST /api/v1/vms` creates a `VirtualMachine` CR plus a cloud-init `Secret` (owner-ref'd to the VM so it GCs on delete). `GET /api/v1/vms[/{name}]` reads state from `status.printableStatus`, falling back to `spec.runStrategy` pre-observation. `start` / `stop` patch `runStrategy`; `DELETE` removes the CR. containerDisk-only for now — disks are ephemeral.
 - **Multi-cluster switcher:** `GET /api/v1/clusters` enumerates kubeconfig contexts; `POST /api/v1/clusters/select` flips the active one. `POST /api/v1/clusters/kind` and `DELETE /api/v1/clusters/kind/{name}` shell out to `kind` with SSE progress; create bundles the KubeVirt + CDI install (operator, CR, optional `useEmulation` patch, wait-for-Available) and bind-mounts host `/dev/kvm` into the KinD node when present. Auto-selects the new context on create; falls back to a surviving context on delete. Sidebar header exposes the switcher; in-cluster mode hides KinD ops.
 - **Serial console:** Multi-session VNC-less virt-api SerialConsole proxy, rendered with xterm.js; scrollback survives tab switches within a VM.
-- **Machine Check:** `GET /api/v1/host/check` surfaces the external CLIs the server shells out to (`kind`, `kubectl`, `docker`, `task`) and the kernel sysctls that bite multi-cluster kind setups (`fs.inotify.max_user_instances`, `fs.inotify.max_user_watches`). `POST /api/v1/host/sysctl` applies the recommended values to `/proc/sys` when the server is running as root on linux outside a cluster; the UI exposes this via a sidebar entry and shows the `/etc/sysctl.d` snippet for persistence.
+- **Machine Check:** `GET /api/v1/host/check` surfaces the external CLIs the server shells out to (`kind`, `kubectl`, `docker`, `k9s`, `task`) and the kernel sysctls that bite multi-cluster kind setups (`fs.inotify.max_user_instances`, `fs.inotify.max_user_watches`). `POST /api/v1/host/sysctl` applies the recommended values to `/proc/sys` when the server is running as root on linux outside a cluster; the UI exposes this via a sidebar entry and shows the `/etc/sysctl.d` snippet for persistence.
+- **Embedded k9s:** sidebar **k9s** entry spawns `k9s --context <active>` in a server-side PTY and proxies it over a WebSocket into xterm.js. Multi-tab per active context; switching KubeGo's active cluster closes open sessions so they don't drift onto the wrong cluster. `POST /api/v1/host/tools/k9s/install` streams `scripts/k9s-install.sh` via SSE when the binary is missing. k9s is Apache-2.0; we shell out to a user-installed binary rather than bundling, so no redistribution obligations. Disabled automatically in in-cluster mode (cluster-admin blast radius).
 
 ## What does not work yet
 
@@ -205,6 +206,8 @@ All endpoints are under `/api/v1/`. Auth via session cookie or `Authorization: B
 - `/vms/{name}/suspend` — kept as alias for stop.
 - `/vms/{name}/shell/sessions*` + the `/vms/{name}/shell/{sessionId}` WebSocket — back, proxying virt-api's `SerialConsole` subresource.
 - `/clusters*` — new; kubeconfig context list + select, KinD create/delete with SSE progress streams. Create bundles KubeVirt + CDI install.
+- `/host/check`, `/host/sysctl`, `/host/tools/k9s/install` — new; Machine Check panel surfaces CLI + sysctl prereqs and runs the k9s installer.
+- `/k9s/sessions*` + the `/k9s/sessions/{sessionId}/ws` WebSocket — new; PTY-backed k9s sessions.
 
 ## Roadmap
 
@@ -215,6 +218,8 @@ All endpoints are under `/api/v1/`. Auth via session cookie or `Authorization: B
 | M1–M3 slice B | Frontend port: VM list + create dialog + lifecycle against the new backend. | shipped |
 | M2 console | Serial console via virt-api `SerialConsole` subresource. | shipped |
 | Multi-cluster | Kubeconfig switcher + UI-driven KinD create/delete with KubeVirt+CDI auto-install and `/dev/kvm` passthrough. | shipped |
+| Machine Check | Sidebar panel: external tool discovery (`kind`, `kubectl`, `docker`, `k9s`, `task`) + kernel sysctl prereqs with one-click apply. | shipped |
+| Embedded k9s | PTY-backed k9s terminal proxied into xterm.js; scoped to the active kubeconfig context. | shipped |
 | M1–M3 slice D | Swap containerDisk for DataVolume + PVC so disks persist. | unblocked (CDI now installed) |
 | M4 | Snapshots, clone (snapshot+restore), PVC hot-plug disks. | pending |
 | M5 | Resize, guest-agent exec, bulk. | pending |
