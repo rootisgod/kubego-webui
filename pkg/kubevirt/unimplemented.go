@@ -236,6 +236,9 @@ func (c *unimplementedClient) DeleteImageUpload(string) error { return ErrNotImp
 func (c *unimplementedClient) LaunchWindowsVM(WindowsLaunchRequest) (string, error) {
 	return "", ErrNotImplemented
 }
+func (c *unimplementedClient) LaunchLinuxISOVM(LinuxISOLaunchRequest) (string, error) {
+	return "", ErrNotImplemented
+}
 
 // ----- cluster -----
 

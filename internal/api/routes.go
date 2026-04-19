@@ -198,6 +198,9 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 
 	// Windows VM create (boots from an uploaded ISO + autounattend.xml)
 	mux.HandleFunc("POST /api/v1/vms/windows", s.rateLimited(s.handleCreateWindowsVM))
+	// Linux ISO VM create (boots from an uploaded ISO, installer runs
+	// interactively in the guest; reached via the Graphics tab)
+	mux.HandleFunc("POST /api/v1/vms/linux-iso", s.rateLimited(s.handleCreateLinuxISOVM))
 
 	// System
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)

@@ -67,10 +67,11 @@ async function startUpload(file) {
   const displayName = uploadName.value || file.name
   const kind = uploadKind.value || (looksLikeISO(file.name) ? 'iso' : 'disk')
 
-  // Default the DV size to the next-GB-up from the file size with a
-  // small cushion. CDI needs headroom for its overhead layer.
+  // Auto-size the DV to the next-GB-up from the file size plus a 1 GB
+  // cushion. CDI needs headroom for its overhead layer, and the UI no
+  // longer asks the user — they don't care what PVC size backs the ISO.
   const fileGB = Math.ceil(file.size / 1024 / 1024 / 1024)
-  const sizeGB = Math.max(uploadSizeGB.value, fileGB + 1, 1)
+  const sizeGB = Math.max(fileGB + 1, 1)
 
   uploading.value = true
   uploadProgress.value = { loaded: 0, total: file.size }
@@ -241,7 +242,7 @@ onBeforeUnmount(() => {
       @dragleave="dragActive = false"
       @drop.prevent="onDrop"
     >
-      <div class="grid grid-cols-[2fr_1fr_1fr_auto] gap-3 items-end">
+      <div class="grid grid-cols-[2fr_1fr_auto] gap-3 items-end">
         <div>
           <label class="block text-[11px] text-[var(--text-secondary)] mb-1">Display name (defaults to filename)</label>
           <input
@@ -263,17 +264,6 @@ onBeforeUnmount(() => {
             <option value="disk">Disk (qcow2 / raw)</option>
           </select>
         </div>
-        <div>
-          <label class="block text-[11px] text-[var(--text-secondary)] mb-1">PVC size (GiB)</label>
-          <input
-            v-model.number="uploadSizeGB"
-            type="number"
-            min="1"
-            max="1024"
-            :disabled="uploading"
-            class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
-          />
-        </div>
         <button
           @click="pickFile"
           :disabled="uploading"
@@ -286,7 +276,7 @@ onBeforeUnmount(() => {
       </div>
       <input ref="fileInput" type="file" class="hidden" @change="onFileChosen" />
       <p class="text-[11px] text-[var(--text-secondary)] mt-2">
-        …or drag-and-drop a file anywhere in this box.
+        …or drag-and-drop a file anywhere in this box. PVC size is auto-derived from the file.
       </p>
 
       <!-- Progress bar -->

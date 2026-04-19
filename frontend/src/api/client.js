@@ -139,6 +139,9 @@ export function uploadImageData(pvcName, file, onProgress) {
 // Windows VM create
 export const createWindowsVM = (opts) => request('POST', '/vms/windows', opts)
 
+// Linux ISO VM create
+export const createLinuxIsoVM = (opts) => request('POST', '/vms/linux-iso', opts)
+
 // Snapshots
 export const listSnapshots = (vmName) => request('GET', `/vms/${vmName}/snapshots`)
 export const createSnapshot = (vmName, name, comment) => request('POST', `/vms/${vmName}/snapshots`, { name, comment })

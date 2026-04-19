@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useVmStore } from '../../stores/vmStore.js'
 import { useToastStore } from '../../stores/toastStore.js'
 import * as api from '../../api/client.js'
-import { Loader2, MonitorSmartphone, AlertCircle, ExternalLink } from 'lucide-vue-next'
+import { Loader2, Terminal, AlertCircle, ExternalLink } from 'lucide-vue-next'
 
 const emit = defineEmits(['close'])
 const store = useVmStore()
@@ -16,15 +16,10 @@ function openImages() {
 
 const name = ref('')
 const installerPVC = ref('')
-const virtioPVC = ref('')
-const hostname = ref('')
-const adminPassword = ref('')
-const enableRDP = ref(true)
-const secureBoot = ref(true)
-const tpm = ref(true)
-const cpus = ref(4)
-const memoryMB = ref(8192)
-const diskGB = ref(60)
+const cpus = ref(2)
+const memoryMB = ref(2048)
+const diskGB = ref(20)
+const uefi = ref(false)
 const submitting = ref(false)
 
 const images = ref([])
@@ -33,10 +28,6 @@ const loadingImages = ref(true)
 const installerImages = computed(() =>
   images.value.filter((i) => i.kind === 'iso' && i.phase === 'Succeeded'),
 )
-const virtioImages = computed(() =>
-  images.value.filter((i) => i.kind === 'iso' && i.phase === 'Succeeded'),
-)
-
 const hasReadyISOs = computed(() => installerImages.value.length > 0)
 
 onMounted(async () => {
@@ -55,28 +46,19 @@ async function submit() {
     toasts.error('Pick an installer ISO')
     return
   }
-  if (!adminPassword.value) {
-    toasts.error('Admin password is required')
-    return
-  }
 
   submitting.value = true
   try {
     const opts = {
       name: name.value || '',
       installer_iso: installerPVC.value,
-      virtio_win_iso: virtioPVC.value || '',
-      hostname: hostname.value || '',
-      admin_password: adminPassword.value,
-      enable_rdp: enableRDP.value,
       cpus: Number(cpus.value),
       memory_mb: Number(memoryMB.value),
       disk_gb: Number(diskGB.value),
-      secure_boot: secureBoot.value,
-      tpm: tpm.value,
+      uefi: uefi.value,
     }
-    await api.createWindowsVM(opts)
-    toasts.success('Windows VM launch started — watch via the Graphics tab')
+    await api.createLinuxIsoVM(opts)
+    toasts.success('Linux ISO VM launch started — drive the installer via the Graphics tab')
     store.fetchVMs()
     emit('close')
   } catch (e) {
@@ -93,8 +75,8 @@ async function submit() {
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
       <div class="relative bg-[var(--bg-surface)] rounded-lg border border-[var(--border)] p-6 max-w-xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center gap-2 mb-4">
-          <MonitorSmartphone class="w-5 h-5 text-[var(--accent)]" />
-          <h3 class="text-lg font-semibold">Launch Windows VM</h3>
+          <Terminal class="w-5 h-5 text-[var(--success)]" />
+          <h3 class="text-lg font-semibold">Launch Linux VM from ISO</h3>
         </div>
 
         <div v-if="loadingImages" class="text-sm text-[var(--text-secondary)] py-8 text-center">
@@ -109,13 +91,13 @@ async function submit() {
           <div>
             <div class="font-medium mb-1">No installer ISOs available</div>
             <div class="text-xs text-yellow-300">
-              Upload a Windows ISO (and ideally a virtio-win ISO) on the
+              Upload a Linux ISO (Ubuntu, Debian, Fedora, …) on the
               <button
                 type="button"
                 @click="openImages"
                 class="inline-flex items-center gap-0.5 text-[var(--accent)] hover:underline font-medium"
               >Images<ExternalLink class="w-3 h-3" /></button>
-              page before launching a Windows VM.
+              page first. For cloud-image installs without an ISO, use the basic <strong>New VM</strong> flow instead.
             </div>
           </div>
         </div>
@@ -127,7 +109,7 @@ async function submit() {
             <input
               v-model="name"
               type="text"
-              placeholder="win-dev"
+              placeholder="linux-iso"
               class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
             />
             <p class="text-xs text-[var(--text-secondary)] mt-1">Leave empty for an auto-generated name.</p>
@@ -136,7 +118,7 @@ async function submit() {
           <!-- Installer ISO -->
           <div>
             <label class="flex items-center justify-between text-xs text-[var(--text-secondary)] mb-1">
-              <span>Windows installer ISO</span>
+              <span>Linux installer ISO</span>
               <button
                 type="button"
                 @click="openImages"
@@ -154,52 +136,6 @@ async function submit() {
             </select>
           </div>
 
-          <!-- virtio-win ISO -->
-          <div>
-            <label class="block text-xs text-[var(--text-secondary)] mb-1">
-              virtio-win drivers ISO
-              <a
-                href="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
-                target="_blank"
-                rel="noopener"
-                class="inline-flex items-center gap-0.5 text-[var(--accent)] hover:underline"
-              >
-                <ExternalLink class="w-3 h-3" />
-                download
-              </a>
-            </label>
-            <select
-              v-model="virtioPVC"
-              class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
-            >
-              <option value="">None (virtio root disk will not be visible during install)</option>
-              <option v-for="img in virtioImages" :key="'v-' + img.pvc_name" :value="img.pvc_name">
-                {{ img.name }} ({{ img.size }})
-              </option>
-            </select>
-          </div>
-
-          <!-- Hostname + admin password -->
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs text-[var(--text-secondary)] mb-1">Hostname</label>
-              <input
-                v-model="hostname"
-                type="text"
-                placeholder="Defaults to VM name"
-                class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
-              />
-            </div>
-            <div>
-              <label class="block text-xs text-[var(--text-secondary)] mb-1">Administrator password *</label>
-              <input
-                v-model="adminPassword"
-                type="password"
-                class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
-              />
-            </div>
-          </div>
-
           <!-- Resources -->
           <div class="grid grid-cols-3 gap-3">
             <div>
@@ -207,7 +143,7 @@ async function submit() {
               <input
                 v-model.number="cpus"
                 type="number"
-                min="2"
+                min="1"
                 class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
               />
             </div>
@@ -216,8 +152,8 @@ async function submit() {
               <input
                 v-model.number="memoryMB"
                 type="number"
-                min="2048"
-                step="1024"
+                min="512"
+                step="512"
                 class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
               />
             </div>
@@ -226,26 +162,25 @@ async function submit() {
               <input
                 v-model.number="diskGB"
                 type="number"
-                min="40"
+                min="8"
                 class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
               />
             </div>
           </div>
 
-          <!-- Toggles -->
+          <!-- Firmware -->
           <div class="space-y-2">
             <label class="flex items-center gap-2 text-sm cursor-pointer">
-              <input v-model="enableRDP" type="checkbox" class="accent-[var(--accent)]" />
-              Enable Remote Desktop on first boot (recommended)
+              <input v-model="uefi" type="checkbox" class="accent-[var(--accent)]" />
+              UEFI firmware (OVMF without Secure Boot)
             </label>
-            <label class="flex items-center gap-2 text-sm cursor-pointer">
-              <input v-model="secureBoot" type="checkbox" class="accent-[var(--accent)]" />
-              Secure Boot (required for Windows 11; forces SMM)
-            </label>
-            <label class="flex items-center gap-2 text-sm cursor-pointer">
-              <input v-model="tpm" type="checkbox" class="accent-[var(--accent)]" />
-              Virtual TPM (required for Windows 11)
-            </label>
+            <p class="text-[11px] text-[var(--text-secondary)] pl-6">
+              Leave off for BIOS/SeaBIOS — works for most distro ISOs. Enable for UEFI-only installers.
+            </p>
+          </div>
+
+          <div class="p-3 rounded bg-[var(--bg-primary)] border border-[var(--border)] text-xs text-[var(--text-secondary)]">
+            After launch, open the <strong>Graphics</strong> tab on the VM to run the installer interactively.
           </div>
         </div>
 
@@ -257,7 +192,7 @@ async function submit() {
           <button
             @click="submit"
             :disabled="submitting || !hasReadyISOs"
-            class="flex items-center gap-2 px-4 py-2 text-sm rounded bg-[var(--accent)] hover:bg-blue-600 transition-colors disabled:opacity-40 text-white"
+            class="flex items-center gap-2 px-4 py-2 text-sm rounded bg-[var(--success)] hover:bg-green-600 transition-colors disabled:opacity-40 text-white"
           >
             <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
             Launch

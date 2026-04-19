@@ -131,6 +131,11 @@ type Client interface {
 	// with the UEFI/TPM/CD-ROM plumbing Windows setup expects.
 	LaunchWindowsVM(req WindowsLaunchRequest) (string, error)
 
+	// LaunchLinuxISOVM boots an uploaded Linux installer ISO against a
+	// blank root DV. No autounattend — the user drives the installer
+	// through VNC. Optional UEFI (no SecureBoot).
+	LaunchLinuxISOVM(req LinuxISOLaunchRequest) (string, error)
+
 	// Cluster-level metrics (replaces PassGo's per-host resource call)
 	ClusterResources() (ClusterResources, error)
 	ClusterInfo() (ClusterInfo, error)

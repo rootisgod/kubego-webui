@@ -8,13 +8,15 @@ import ActionButton from '../shared/ActionButton.vue'
 import Sparkline from '../shared/Sparkline.vue'
 import CreateVmModal from '../modals/CreateVmModal.vue'
 import CreateWindowsVmModal from '../modals/CreateWindowsVmModal.vue'
+import CreateLinuxIsoVmModal from '../modals/CreateLinuxIsoVmModal.vue'
 import ConfirmModal from '../modals/ConfirmModal.vue'
 import ClusterInfoPanel from './ClusterInfoPanel.vue'
-import { Plus, Play, Square, Server, Activity, AlertTriangle, X, Loader2, Cpu, MemoryStick, HardDrive, Download, MonitorSmartphone, Terminal as TerminalIcon } from 'lucide-vue-next'
+import { Plus, Play, Square, Server, Activity, AlertTriangle, X, Loader2, Cpu, MemoryStick, HardDrive, Download, MonitorSmartphone, Disc } from 'lucide-vue-next'
 
 const store = useVmStore()
 const toasts = useToastStore()
 const showCreateModal = ref(false)
+const showLinuxIsoModal = ref(false)
 const showWindowsModal = ref(false)
 const confirmAction = ref(null)
 
@@ -188,16 +190,21 @@ async function executeConfirmed() {
       </button>
     </div>
 
-    <!-- Actions -->
-    <div class="flex items-center gap-3">
-      <ActionButton label="New Linux VM" :icon="TerminalIcon" variant="success" @click="showCreateModal = true" />
-      <ActionButton label="New Windows VM" :icon="MonitorSmartphone" variant="primary" @click="showWindowsModal = true" />
+    <!-- Actions. Three create paths:
+         - New VM: cloud-image Linux, fastest boot (no installer)
+         - New Linux ISO VM: boots an uploaded Linux ISO, interactive install
+         - New Windows ISO VM: unattended Windows install from ISO + virtio-win -->
+    <div class="flex flex-wrap items-center gap-3">
+      <ActionButton label="New VM" :icon="Plus" variant="success" @click="showCreateModal = true" />
+      <ActionButton label="New Linux ISO VM" :icon="Disc" variant="success" @click="showLinuxIsoModal = true" />
+      <ActionButton label="New Windows ISO VM" :icon="MonitorSmartphone" variant="primary" @click="showWindowsModal = true" />
       <ActionButton label="Start All" :icon="Play" @click="confirmBulk(doStartAll, 'Start all stopped VMs?')" />
       <ActionButton label="Stop All" :icon="Square" @click="confirmBulk(doStopAll, 'Stop all running VMs?')" />
       <ActionButton label="Ansible Inventory" :icon="Download" @click="downloadInventory" />
     </div>
 
     <CreateVmModal v-if="showCreateModal" @close="showCreateModal = false" />
+    <CreateLinuxIsoVmModal v-if="showLinuxIsoModal" @close="showLinuxIsoModal = false" />
     <CreateWindowsVmModal v-if="showWindowsModal" @close="showWindowsModal = false" />
     <ConfirmModal
       v-if="confirmAction"

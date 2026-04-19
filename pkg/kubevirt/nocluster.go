@@ -122,6 +122,9 @@ func (noClusterClient) DeleteImageUpload(string) error { return ErrNoActiveClust
 func (noClusterClient) LaunchWindowsVM(WindowsLaunchRequest) (string, error) {
 	return "", ErrNoActiveCluster
 }
+func (noClusterClient) LaunchLinuxISOVM(LinuxISOLaunchRequest) (string, error) {
+	return "", ErrNoActiveCluster
+}
 
 func (noClusterClient) ClusterResources() (ClusterResources, error) {
 	return ClusterResources{}, ErrNoActiveCluster
