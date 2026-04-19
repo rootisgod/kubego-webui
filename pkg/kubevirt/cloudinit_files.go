@@ -236,6 +236,128 @@ func containsQEMUGuestAgent(entry any) bool {
 	return false
 }
 
+// InjectHostname sets the top-level `hostname` and `fqdn` keys on a
+// cloud-init document so the VM comes up with a name that matches what
+// the UI asked for, rather than the generic "ubuntu"/"fedora" default.
+// Empty hostname is a no-op.
+func InjectHostname(content, hostname string) (string, error) {
+	hostname = strings.TrimSpace(hostname)
+	if hostname == "" {
+		return content, nil
+	}
+	if strings.TrimSpace(content) == "" {
+		content = "#cloud-config\n"
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return "", fmt.Errorf("parse cloud-init yaml: %w", err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	doc["hostname"] = hostname
+	doc["fqdn"] = hostname
+	doc["preserve_hostname"] = false
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal cloud-init yaml: %w", err)
+	}
+	return "#cloud-config\n" + string(out), nil
+}
+
+// InjectUserWithPassword adds a sudo-capable `username` user to the
+// cloud-init document and sets its password via chpasswd with
+// `expire: false`. When sshPubKey is non-empty it also seeds the user's
+// authorized_keys so the caller can SSH in as that account immediately.
+//
+// Idempotent-ish: if a user with the same name already exists in the
+// users block we leave it alone (the operator presumably meant it) and
+// still append to chpasswd so the password lands. Empty username or
+// password is a no-op.
+func InjectUserWithPassword(content, username, password, sshPubKey string) (string, error) {
+	username = strings.TrimSpace(username)
+	if username == "" || password == "" {
+		return content, nil
+	}
+	if strings.TrimSpace(content) == "" {
+		content = "#cloud-config\n"
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return "", fmt.Errorf("parse cloud-init yaml: %w", err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+
+	// Users list — normalise, then append if the user isn't present.
+	var users []any
+	switch v := doc["users"].(type) {
+	case nil:
+		// Preserve the distro default user ("ubuntu", "fedora", …) by
+		// keeping the cloud-init shortcut `default` at position 0.
+		users = []any{"default"}
+	case []any:
+		users = v
+	default:
+		return "", fmt.Errorf("unexpected type for users: %T", v)
+	}
+	alreadyHasUser := false
+	for _, u := range users {
+		if m, ok := u.(map[string]any); ok {
+			if n, _ := m["name"].(string); n == username {
+				alreadyHasUser = true
+				break
+			}
+		}
+	}
+	if !alreadyHasUser {
+		entry := map[string]any{
+			"name":        username,
+			"groups":      "sudo",
+			"sudo":        "ALL=(ALL) NOPASSWD:ALL",
+			"shell":       "/bin/bash",
+			"lock_passwd": false,
+		}
+		if key := strings.TrimSpace(sshPubKey); key != "" {
+			entry["ssh_authorized_keys"] = []any{key}
+		}
+		users = append(users, entry)
+	}
+	doc["users"] = users
+
+	// chpasswd sets the password. `expire: false` skips the force-change-
+	// on-first-login prompt, which is what a lab tool wants. Plain-text
+	// format — cloud-init hashes and applies it inside the guest.
+	chpasswd, _ := doc["chpasswd"].(map[string]any)
+	if chpasswd == nil {
+		chpasswd = map[string]any{}
+	}
+	existing, _ := chpasswd["list"].(string)
+	line := username + ":" + password
+	if !strings.Contains(existing, line) {
+		if existing == "" {
+			chpasswd["list"] = line + "\n"
+		} else {
+			chpasswd["list"] = strings.TrimRight(existing, "\n") + "\n" + line + "\n"
+		}
+	}
+	if _, ok := chpasswd["expire"]; !ok {
+		chpasswd["expire"] = false
+	}
+	doc["chpasswd"] = chpasswd
+
+	// SSH password auth so the user can log in over SSH with the
+	// password (cloud-init default varies by distro).
+	doc["ssh_pwauth"] = true
+
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal cloud-init yaml: %w", err)
+	}
+	return "#cloud-config\n" + string(out), nil
+}
+
 // ValidateCloudInitYAML checks that content is valid cloud-init YAML.
 // The first non-empty line must be "#cloud-config" — the same rule
 // cloud-init itself enforces in the guest.

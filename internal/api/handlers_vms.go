@@ -43,6 +43,15 @@ type createVMRequest struct {
 	Network   string `json:"network"`
 	Profile   string `json:"profile"`
 	Playbook  string `json:"playbook"`
+	// Guest-identity fields — all optional; the handler injects them
+	// into the cloud-init document before launch.
+	Hostname     string `json:"hostname"`      // sets hostname/fqdn; defaults to VM name inside cloud-init
+	Username     string `json:"username"`      // extra sudo user
+	Password     string `json:"password"`      // plain-text password for Username (required if Username set)
+	SSHPublicKey string `json:"sshPublicKey"`  // extra pubkey appended alongside KubeGo's auto-injected one
+	// Hardware knobs.
+	UEFI        bool  `json:"uefi"`         // OVMF firmware without SecureBoot
+	ExtraDiskGB []int `json:"extraDiskGB"`  // blank data disks, one per entry (GB each)
 }
 
 func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +152,47 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		cloudInitContent = merged
 	}
 
+	// Optional user-supplied SSH pubkey (merged alongside KubeGo's own)
+	// — lets the user SSH in from their workstation without going
+	// through the "wait for qemu-guest-agent, fetch KubeGo's private
+	// key, ssh -i that key" dance.
+	if strings.TrimSpace(req.SSHPublicKey) != "" {
+		merged, err := kubevirt.InjectSSHAuthorizedKey(cloudInitContent, req.SSHPublicKey)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cloud-init rewrite failed: "+err.Error())
+			return
+		}
+		cloudInitContent = merged
+	}
+
+	// Hostname: keep separate from VM name so users can e.g. name a VM
+	// "build-12" but have the guest identify as "jenkins-agent". Empty
+	// string falls through — cloud-init picks its distro default.
+	if req.Hostname != "" {
+		merged, err := kubevirt.InjectHostname(cloudInitContent, req.Hostname)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cloud-init hostname rewrite failed: "+err.Error())
+			return
+		}
+		cloudInitContent = merged
+	}
+
+	// Optional sudo user + password. Password is required when a
+	// username is given — without it the account would exist but be
+	// unlogin-able, which is just a footgun.
+	if req.Username != "" {
+		if req.Password == "" {
+			writeError(w, http.StatusBadRequest, "password is required when username is set")
+			return
+		}
+		merged, err := kubevirt.InjectUserWithPassword(cloudInitContent, req.Username, req.Password, req.SSHPublicKey)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cloud-init user rewrite failed: "+err.Error())
+			return
+		}
+		cloudInitContent = merged
+	}
+
 	// Install qemu-guest-agent on first boot. KubeVirt uses the agent for
 	// password reset, filesystem-consistent snapshots, and richer status —
 	// shipping it by default means new features don't need a second pass
@@ -175,7 +225,17 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 				s.logger.Error("VM launch goroutine panicked", "name", name, "panic", rec)
 			}
 		}()
-		_, err := s.kv().LaunchVM(name, req.Release, req.CPUs, req.MemoryMB, req.DiskGB, cloudInitFile, req.Network)
+		_, err := s.kv().LaunchVMFromImage(kubevirt.VMImageLaunchRequest{
+			Name:          name,
+			Release:       req.Release,
+			CPUs:          req.CPUs,
+			MemoryMB:      req.MemoryMB,
+			DiskGB:        req.DiskGB,
+			CloudInitFile: cloudInitFile,
+			NetworkName:   req.Network,
+			UEFI:          req.UEFI,
+			ExtraDiskGB:   req.ExtraDiskGB,
+		})
 		if err != nil {
 			s.logger.Error("VM launch failed", "name", name, "err", err)
 			s.launches.fail(name, err.Error())

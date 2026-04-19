@@ -38,6 +38,22 @@ const playbook = ref('')
 const submitting = ref(false)
 const selectedProfile = ref('')
 
+// Guest identity + hardware knobs. All optional; submit omits empty
+// values so the backend defaults kick in.
+const hostname = ref('')
+const username = ref('')
+const password = ref('')
+const sshPublicKey = ref('')
+const uefi = ref(false)
+const extraDisks = ref([]) // array of { gb: number } — blank data disks
+
+function addExtraDisk() {
+  extraDisks.value.push({ gb: 20 })
+}
+function removeExtraDisk(i) {
+  extraDisks.value.splice(i, 1)
+}
+
 // Applying a size preset mutates the three resource refs; edits in
 // Advanced mode clear the selection so we don't lie about which preset
 // is active.
@@ -171,6 +187,13 @@ async function submit() {
     if (selectedProfile.value) {
       opts.profile = selectedProfile.value
     }
+    if (hostname.value) opts.hostname = hostname.value
+    if (username.value) opts.username = username.value
+    if (password.value) opts.password = password.value
+    if (sshPublicKey.value) opts.sshPublicKey = sshPublicKey.value
+    if (uefi.value) opts.uefi = true
+    const disks = extraDisks.value.map(d => Number(d.gb)).filter(n => n > 0)
+    if (disks.length) opts.extraDiskGB = disks
     await api.createVM(opts)
     toasts.success(`VM creation started`)
     store.fetchVMs()
@@ -216,7 +239,7 @@ async function saveAsProfile() {
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')" />
       <div class="relative bg-[var(--bg-surface)] rounded-lg border border-[var(--border)] p-6 max-w-lg w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold">Launch Virtual Machine</h3>
+          <h3 class="text-lg font-semibold">Create VM from Image</h3>
           <!-- Mode toggle. Quick is the happy path; Advanced reveals
                cloud-init, networks, playbooks, profiles, manual
                resource inputs. Values carry across both modes. -->
@@ -407,6 +430,96 @@ async function saveAsProfile() {
                 </option>
               </optgroup>
             </select>
+          </div>
+
+          <!-- Guest identity. All optional — blank fields fall back
+               to the distro's cloud-init defaults (hostname=ubuntu,
+               login=ubuntu:ubuntu). -->
+          <div class="pt-2 border-t border-[var(--border)]">
+            <p class="text-xs font-medium text-[var(--text-secondary)] mb-2">Guest identity (optional)</p>
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs text-[var(--text-secondary)] mb-1">Hostname</label>
+                <input
+                  v-model="hostname"
+                  type="text"
+                  placeholder="Defaults to distro default (e.g. 'ubuntu')"
+                  class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+                />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs text-[var(--text-secondary)] mb-1">Extra username</label>
+                  <input
+                    v-model="username"
+                    type="text"
+                    placeholder="alice"
+                    class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs text-[var(--text-secondary)] mb-1">Password</label>
+                  <input
+                    v-model="password"
+                    type="password"
+                    placeholder="Required if username is set"
+                    class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-[var(--text-secondary)] mb-1">Extra SSH public key</label>
+                <textarea
+                  v-model="sshPublicKey"
+                  rows="2"
+                  placeholder="ssh-ed25519 AAAA… user@laptop"
+                  class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-3 py-2 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+                />
+                <p class="text-[11px] text-[var(--text-secondary)] mt-1">
+                  Added alongside KubeGo's auto-injected key. Goes to the default cloud user and, if set, the extra user above.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hardware knobs -->
+          <div class="pt-2 border-t border-[var(--border)]">
+            <p class="text-xs font-medium text-[var(--text-secondary)] mb-2">Hardware</p>
+            <label class="flex items-center gap-2 text-sm cursor-pointer mb-3">
+              <input v-model="uefi" type="checkbox" class="accent-[var(--accent)]" />
+              UEFI firmware (OVMF, no Secure Boot)
+            </label>
+
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs text-[var(--text-secondary)]">Extra data disks (GB)</label>
+                <button
+                  type="button"
+                  @click="addExtraDisk"
+                  class="text-[11px] text-[var(--accent)] hover:underline"
+                >+ Add disk</button>
+              </div>
+              <div v-if="extraDisks.length === 0" class="text-[11px] text-[var(--text-secondary)]">
+                None. Root disk sizing is in the Resources row above.
+              </div>
+              <div v-for="(d, i) in extraDisks" :key="i" class="flex items-center gap-2 mb-1">
+                <span class="text-[11px] text-[var(--text-secondary)] w-16">/dev/vd{{ String.fromCharCode(98 + i) }}</span>
+                <input
+                  v-model.number="d.gb"
+                  type="number"
+                  min="1"
+                  class="flex-1 bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]"
+                />
+                <button
+                  type="button"
+                  @click="removeExtraDisk(i)"
+                  class="text-xs text-[var(--text-secondary)] hover:text-red-400"
+                >Remove</button>
+              </div>
+              <p v-if="extraDisks.length > 0" class="text-[11px] text-[var(--text-secondary)] mt-1">
+                Blank data disks. Partition and mount them inside the guest on first boot.
+              </p>
+            </div>
           </div>
 
           <!-- Playbook (auto-run after launch) -->

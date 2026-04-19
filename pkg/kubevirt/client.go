@@ -49,7 +49,7 @@ type Client interface {
 	// Lifecycle
 	ListVMs() ([]VMInfo, error)
 	GetVMInfo(name string) (VMInfo, error)
-	LaunchVM(name, release string, cpus, memoryMB, diskGB int, cloudInitFile, networkName string) (string, error)
+	LaunchVMFromImage(req VMImageLaunchRequest) (string, error)
 	CloneVM(source, destName string) (string, error)
 	StartVM(name string) error
 	StopVM(name string) error

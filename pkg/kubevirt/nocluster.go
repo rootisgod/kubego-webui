@@ -32,7 +32,7 @@ func (noClusterClient) SuspendVM(string) error                 { return ErrNoAct
 func (noClusterClient) DeleteVM(string, bool) error            { return ErrNoActiveCluster }
 func (noClusterClient) StartAll() error                        { return ErrNoActiveCluster }
 func (noClusterClient) StopAll() error                         { return ErrNoActiveCluster }
-func (noClusterClient) LaunchVM(string, string, int, int, int, string, string) (string, error) {
+func (noClusterClient) LaunchVMFromImage(VMImageLaunchRequest) (string, error) {
 	return "", ErrNoActiveCluster
 }
 func (noClusterClient) CloneVM(string, string) (string, error) { return "", ErrNoActiveCluster }

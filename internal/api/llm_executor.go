@@ -156,7 +156,14 @@ func (s *Server) executeToolWithProgress(toolName string, argsJSON string, progr
 		}
 		done := make(chan launchResult, 1)
 		go func() {
-			name, err := s.kv().LaunchVM(args.Name, args.Image, args.CPUs, args.MemoryMB, args.DiskGB, cloudInitFile, "")
+			name, err := s.kv().LaunchVMFromImage(kubevirt.VMImageLaunchRequest{
+				Name:          args.Name,
+				Release:       args.Image,
+				CPUs:          args.CPUs,
+				MemoryMB:      args.MemoryMB,
+				DiskGB:        args.DiskGB,
+				CloudInitFile: cloudInitFile,
+			})
 			// Clean up temp file
 			if tmpCloudInit != "" {
 				os.Remove(tmpCloudInit)

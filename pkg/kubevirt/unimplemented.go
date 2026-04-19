@@ -101,7 +101,7 @@ func (c *unimplementedClient) SuspendVM(string) error                 { return E
 func (c *unimplementedClient) DeleteVM(string, bool) error            { return ErrNotImplemented }
 func (c *unimplementedClient) StartAll() error                        { return ErrNotImplemented }
 func (c *unimplementedClient) StopAll() error                         { return ErrNotImplemented }
-func (c *unimplementedClient) LaunchVM(string, string, int, int, int, string, string) (string, error) {
+func (c *unimplementedClient) LaunchVMFromImage(VMImageLaunchRequest) (string, error) {
 	return "", ErrNotImplemented
 }
 func (c *unimplementedClient) CloneVM(string, string) (string, error) { return "", ErrNotImplemented }

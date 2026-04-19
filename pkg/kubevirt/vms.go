@@ -39,42 +39,57 @@ var (
 	}
 )
 
-// LaunchVM provisions a Secret holding cloud-init user-data (if any) and
-// then a VirtualMachine CR whose root disk is a DataVolume (PVC backed by
-// CDI, sourced from the containerdisks image). Returns the VM's name on
-// success.
+// VMImageLaunchRequest captures every knob the image-based create flow
+// exposes. A zero value is not valid — Name is required; unset numeric
+// fields fall back to DefaultCPUCores / DefaultRAMMB / DefaultDiskGB.
+type VMImageLaunchRequest struct {
+	Name          string // VM name (RFC 1123 DNS label)
+	Release       string // containerdisk alias, e.g. "24.04" / "ubuntu-24.04"
+	CPUs          int
+	MemoryMB      int
+	DiskGB        int
+	CloudInitFile string // optional; path to a rendered cloud-init file
+	NetworkName   string // optional; empty = default pod/masquerade
+	UEFI          bool   // optional; OVMF firmware without SecureBoot
+	ExtraDiskGB   []int  // optional; blank data disks attached in order
+}
+
+// LaunchVMFromImage provisions a Secret holding cloud-init user-data (if
+// any) and then a VirtualMachine CR whose root disk is a DataVolume
+// (PVC backed by CDI, sourced from the containerdisks image). Returns
+// the VM's name on success.
 //
 // The DataVolume is declared via `spec.dataVolumeTemplates` so KubeVirt
 // owns its lifecycle — delete the VM and the DV (and its PVC) go with it.
 // First boot runs cloud-init's growpart/resize2fs to expand the filesystem
 // into whatever disk size the user requested, so a 2 GB Ubuntu image in a
 // 16 GB PVC yields a 16 GB usable root disk.
-func (c *kubevirtClient) LaunchVM(name, release string, cpus, memoryMB, diskGB int, cloudInitFile, networkName string) (string, error) {
-	if err := ValidateVMName(name); err != nil {
+func (c *kubevirtClient) LaunchVMFromImage(req VMImageLaunchRequest) (string, error) {
+	if err := ValidateVMName(req.Name); err != nil {
 		return "", err
 	}
-	if release == "" {
-		release = DefaultUbuntuRelease
+	if req.Release == "" {
+		req.Release = DefaultUbuntuRelease
 	}
-	if cpus <= 0 {
-		cpus = DefaultCPUCores
+	if req.CPUs <= 0 {
+		req.CPUs = DefaultCPUCores
 	}
-	if memoryMB <= 0 {
-		memoryMB = DefaultRAMMB
+	if req.MemoryMB <= 0 {
+		req.MemoryMB = DefaultRAMMB
 	}
-	if diskGB <= 0 {
-		diskGB = DefaultDiskGB
+	if req.DiskGB <= 0 {
+		req.DiskGB = DefaultDiskGB
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	secretName, err := c.ensureCloudInitSecret(ctx, name, cloudInitFile)
+	secretName, err := c.ensureCloudInitSecret(ctx, req.Name, req.CloudInitFile)
 	if err != nil {
 		return "", fmt.Errorf("write cloud-init secret: %w", err)
 	}
 
-	vm := buildVMObject(c.namespace, name, release, cpus, memoryMB, diskGB, secretName)
+	vm := buildVMObject(c.namespace, req, secretName)
 	created, err := c.dyn.Resource(vmGVR).Namespace(c.namespace).Create(ctx, vm, metav1.CreateOptions{})
 	if err != nil {
 		// Roll back the secret so a retry with the same name isn't
@@ -91,11 +106,11 @@ func (c *kubevirtClient) LaunchVM(name, release string, cpus, memoryMB, diskGB i
 	if secretName != "" {
 		if err := c.setSecretOwner(ctx, secretName, created); err != nil {
 			c.logger.Warn("set cloud-init secret owner-ref failed (secret will outlive VM)",
-				"vm", name, "secret", secretName, "err", err)
+				"vm", req.Name, "secret", secretName, "err", err)
 		}
 	}
 
-	return name, nil
+	return req.Name, nil
 }
 
 // ensureCloudInitSecret reads cloudInitFile (if non-empty), writes its
@@ -149,8 +164,8 @@ func (c *kubevirtClient) setSecretOwner(ctx context.Context, secretName string, 
 // registry image) and an optional cloudInitNoCloud user-data disk. The
 // DataVolume is declared via `spec.dataVolumeTemplates` so it inherits
 // the VM's lifecycle — delete the VM, the DV and its PVC go with it.
-func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, cloudInitSecret string) *unstructured.Unstructured {
-	rootDVName := name + "-root"
+func buildVMObject(namespace string, req VMImageLaunchRequest, cloudInitSecret string) *unstructured.Unstructured {
+	rootDVName := req.Name + "-root"
 	disks := []any{
 		map[string]any{
 			"name": "rootdisk",
@@ -187,18 +202,18 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, 
 	// provisioners (e.g. rancher.io/local-path on KinD) has no defaults
 	// and the DV fails with ErrClaimNotValid. storageClassName is still
 	// omitted so the cluster's default SC applies.
-	dvTemplate := map[string]any{
+	dvTemplates := []any{map[string]any{
 		"metadata": map[string]any{
 			"name": rootDVName,
 			"labels": map[string]any{
 				"app.kubernetes.io/managed-by": "kubego",
-				"kubego.io/vm":                 name,
+				"kubego.io/vm":                 req.Name,
 			},
 		},
 		"spec": map[string]any{
 			"source": map[string]any{
 				"registry": map[string]any{
-					"url": "docker://" + ContainerDiskImage(release),
+					"url": "docker://" + ContainerDiskImage(req.Release),
 				},
 			},
 			"storage": map[string]any{
@@ -206,48 +221,105 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, 
 				"volumeMode":  "Filesystem",
 				"resources": map[string]any{
 					"requests": map[string]any{
-						"storage": fmt.Sprintf("%dGi", diskGB),
+						"storage": fmt.Sprintf("%dGi", req.DiskGB),
 					},
 				},
 			},
 		},
+	}}
+
+	// Extra blank data disks. Each becomes its own DataVolume (blank
+	// source, same sizing machinery as the root) and is attached to the
+	// VM on virtio so the guest sees them as /dev/vdb, /dev/vdc, …
+	// Unformatted — the user partitions/mkfs them at first boot.
+	for i, gb := range req.ExtraDiskGB {
+		if gb <= 0 {
+			continue
+		}
+		dvName := fmt.Sprintf("%s-data%d", req.Name, i+1)
+		dvTemplates = append(dvTemplates, map[string]any{
+			"metadata": map[string]any{
+				"name": dvName,
+				"labels": map[string]any{
+					"app.kubernetes.io/managed-by": "kubego",
+					"kubego.io/vm":                 req.Name,
+				},
+			},
+			"spec": map[string]any{
+				"source": map[string]any{"blank": map[string]any{}},
+				"storage": map[string]any{
+					"accessModes": []any{"ReadWriteOnce"},
+					"volumeMode":  "Filesystem",
+					"resources": map[string]any{
+						"requests": map[string]any{
+							"storage": fmt.Sprintf("%dGi", gb),
+						},
+					},
+				},
+			},
+		})
+		diskName := fmt.Sprintf("datadisk%d", i+1)
+		disks = append(disks, map[string]any{
+			"name": diskName,
+			"disk": map[string]any{"bus": "virtio"},
+		})
+		volumes = append(volumes, map[string]any{
+			"name":       diskName,
+			"dataVolume": map[string]any{"name": dvName},
+		})
+	}
+
+	domain := map[string]any{
+		"cpu":    map[string]any{"cores": int64(req.CPUs)},
+		"memory": map[string]any{"guest": fmt.Sprintf("%dMi", req.MemoryMB)},
+		"devices": map[string]any{
+			"disks": disks,
+			"interfaces": []any{
+				map[string]any{
+					"name":       "default",
+					"masquerade": map[string]any{},
+				},
+			},
+		},
+	}
+	// OVMF firmware without SecureBoot. Needed for installers that
+	// refuse to boot under SeaBIOS or to rehearse a UEFI install. We
+	// leave SecureBoot off so distros with unsigned shims still boot.
+	if req.UEFI {
+		domain["machine"] = map[string]any{"type": "q35"}
+		domain["firmware"] = map[string]any{
+			"bootloader": map[string]any{
+				"efi": map[string]any{
+					"secureBoot": false,
+					"persistent": false,
+				},
+			},
+		}
 	}
 
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "kubevirt.io/v1",
 		"kind":       "VirtualMachine",
 		"metadata": map[string]any{
-			"name":      name,
+			"name":      req.Name,
 			"namespace": namespace,
 			"labels": map[string]any{
 				"app.kubernetes.io/managed-by": "kubego",
-				"kubego.io/release":            release,
+				"kubego.io/release":            req.Release,
 				"kubego.io/os":                 "linux",
 			},
 		},
 		"spec": map[string]any{
 			"runStrategy":         "Always",
-			"dataVolumeTemplates": []any{dvTemplate},
+			"dataVolumeTemplates": dvTemplates,
 			"template": map[string]any{
 				"metadata": map[string]any{
 					"labels": map[string]any{
-						"kubevirt.io/vm": name,
+						"kubevirt.io/vm": req.Name,
 					},
 				},
 				"spec": map[string]any{
-					"domain": map[string]any{
-						"cpu":    map[string]any{"cores": int64(cpus)},
-						"memory": map[string]any{"guest": fmt.Sprintf("%dMi", memoryMB)},
-						"devices": map[string]any{
-							"disks": disks,
-							"interfaces": []any{
-								map[string]any{
-									"name":       "default",
-									"masquerade": map[string]any{},
-								},
-							},
-						},
-					},
+					"domain": domain,
 					"networks": []any{
 						map[string]any{
 							"name": "default",

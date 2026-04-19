@@ -195,9 +195,9 @@ async function executeConfirmed() {
          - New Linux ISO VM: boots an uploaded Linux ISO, interactive install
          - New Windows ISO VM: unattended Windows install from ISO + virtio-win -->
     <div class="flex flex-wrap items-center gap-3">
-      <ActionButton label="New VM" :icon="Plus" variant="success" @click="showCreateModal = true" />
-      <ActionButton label="New Linux ISO VM" :icon="Disc" variant="success" @click="showLinuxIsoModal = true" />
-      <ActionButton label="New Windows ISO VM" :icon="MonitorSmartphone" variant="primary" @click="showWindowsModal = true" />
+      <ActionButton label="Create VM from Image" :icon="Plus" variant="success" @click="showCreateModal = true" />
+      <ActionButton label="Create Linux VM from ISO" :icon="Disc" variant="success" @click="showLinuxIsoModal = true" />
+      <ActionButton label="Create Windows VM from ISO" :icon="MonitorSmartphone" variant="primary" @click="showWindowsModal = true" />
       <ActionButton label="Start All" :icon="Play" @click="confirmBulk(doStartAll, 'Start all stopped VMs?')" />
       <ActionButton label="Stop All" :icon="Square" @click="confirmBulk(doStopAll, 'Stop all running VMs?')" />
       <ActionButton label="Ansible Inventory" :icon="Download" @click="downloadInventory" />
