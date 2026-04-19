@@ -1,0 +1,10 @@
+---
+# Connectivity smoke test. Runs Ansible's built-in `ping` module against
+# every host in the inventory — a successful run proves SSH works and
+# Python is available on the remote.
+- name: Ping all hosts
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:

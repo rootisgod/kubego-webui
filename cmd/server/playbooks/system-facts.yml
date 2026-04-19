@@ -1,0 +1,16 @@
+---
+# Print a compact summary of each host: distro, kernel, uptime, memory,
+# CPU count, and primary IP. Useful as a fleet inventory check.
+- name: Report system facts
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "Host:    {{ inventory_hostname }} ({{ ansible_default_ipv4.address | default('no-ipv4') }})"
+          - "Distro:  {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel:  {{ ansible_kernel }}"
+          - "CPUs:    {{ ansible_processor_vcpus }}"
+          - "Memory:  {{ ansible_memtotal_mb }} MB"
+          - "Uptime:  {{ (ansible_uptime_seconds | int // 60) }} minutes"

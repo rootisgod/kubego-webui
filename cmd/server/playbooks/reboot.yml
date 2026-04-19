@@ -1,0 +1,10 @@
+---
+# Reboot every host and wait for SSH to come back.
+- name: Reboot hosts
+  hosts: all
+  become: true
+  tasks:
+    - name: Reboot
+      ansible.builtin.reboot:
+        msg: "Reboot triggered by KubeGo reboot playbook"
+        reboot_timeout: 300

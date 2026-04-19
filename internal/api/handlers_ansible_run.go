@@ -111,12 +111,11 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, req.Playbook)
+	playbookPath, playbookCleanup, err := s.resolvePlaybookPath(req.Playbook)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "playbook not found")
 		return
 	}
-	playbookPath := filepath.Join(s.cfg.PlaybooksDir, req.Playbook)
 
 	// Resolve target VMs
 	targetVMs := make([]string, len(req.VMs))
@@ -154,18 +153,27 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 	}
 	inventory, err := s.generateInventoryYAML(targetVMs, user, sshKey)
 	if err != nil {
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to generate inventory")
 		return
 	}
 
 	tmpFile, err := os.CreateTemp("", "passgo-ansible-inventory-*.yml")
 	if err != nil {
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to create temp inventory")
 		return
 	}
 	if _, err := tmpFile.WriteString(inventory); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to write inventory")
 		return
 	}
@@ -177,7 +185,7 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		"ANSIBLE_HOST_KEY_CHECKING=False",
 	)
 
-	s.ansibleRunner.start(req.Playbook, targetVMs, cmd, tmpFile.Name())
+	s.ansibleRunner.start(req.Playbook, targetVMs, cmd, []string{tmpFile.Name(), playbookCleanup})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started", "playbook": req.Playbook})
 }
@@ -293,35 +301,40 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		return
 	}
 
-	_, err = kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, playbook)
+	playbookPath, playbookCleanup, err := s.resolvePlaybookPath(playbook)
 	if err != nil {
 		s.logger.Error("playbook not found for queued run", "playbook", playbook, "err", err)
 		return
 	}
-	playbookPath := filepath.Join(s.cfg.PlaybooksDir, playbook)
 
 	user := "ubuntu"
 	sshKey := ""
 	if s.cfg.VMDefaults != nil {
 		sshKey = s.cfg.VMDefaults.SSHPrivateKey
 	}
-	if sshKey == "" {
-		sshKey = ""
-	}
 	inventory, err := s.generateInventoryYAML(vms, user, sshKey)
 	if err != nil {
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
 		s.logger.Error("failed to generate inventory for queued run", "err", err)
 		return
 	}
 
 	tmpFile, err := os.CreateTemp("", "passgo-ansible-inventory-*.yml")
 	if err != nil {
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
 		s.logger.Error("failed to create temp inventory for queued run", "err", err)
 		return
 	}
 	if _, err := tmpFile.WriteString(inventory); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
 		s.logger.Error("failed to write inventory for queued run", "err", err)
 		return
 	}
@@ -333,7 +346,32 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		"ANSIBLE_HOST_KEY_CHECKING=False",
 	)
 
-	s.ansibleRunner.start(playbook, vms, cmd, tmpFile.Name())
+	s.ansibleRunner.start(playbook, vms, cmd, []string{tmpFile.Name(), playbookCleanup})
+}
+
+// resolvePlaybookPath returns a filesystem path that ansible-playbook can
+// invoke. For built-in playbooks it writes the embedded content to a
+// temp file; the returned `cleanupPath` (possibly empty) should be added
+// to ansibleRunner.start's cleanup list so the temp file is removed
+// after the run finishes. For user playbooks cleanupPath is "".
+func (s *Server) resolvePlaybookPath(name string) (path string, cleanupPath string, err error) {
+	if data, err := s.builtinPlaybooksFS.ReadFile("playbooks/" + name); err == nil {
+		tmp, terr := os.CreateTemp("", "kubego-builtin-playbook-*.yml")
+		if terr != nil {
+			return "", "", terr
+		}
+		if _, werr := tmp.Write(data); werr != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+			return "", "", werr
+		}
+		tmp.Close()
+		return tmp.Name(), tmp.Name(), nil
+	}
+	if _, err := kubevirt.ReadPlaybook(s.cfg.PlaybooksDir, name); err != nil {
+		return "", "", err
+	}
+	return filepath.Join(s.cfg.PlaybooksDir, name), "", nil
 }
 
 func sendSSEEvent(w http.ResponseWriter, flusher http.Flusher, event ansibleOutputEvent) {

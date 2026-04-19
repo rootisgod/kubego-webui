@@ -32,6 +32,9 @@ var frontendFS embed.FS
 //go:embed cloud-init/*.yml
 var builtinTemplatesFS embed.FS
 
+//go:embed playbooks/*.yml
+var builtinPlaybooksFS embed.FS
+
 func main() {
 	var (
 		port       int
@@ -121,7 +124,7 @@ func main() {
 		staticFS = spaHandler(http.FileServerFS(distFS), distFS)
 	}
 
-	srv := api.NewServer(clusters, cfg, configPath, logger, Version, BuildTime, GitCommit, builtinTemplatesFS)
+	srv := api.NewServer(clusters, cfg, configPath, logger, Version, BuildTime, GitCommit, builtinTemplatesFS, builtinPlaybooksFS)
 	handler := srv.Handler(staticFS)
 
 	listen := cfg.Listen

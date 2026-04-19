@@ -1,0 +1,33 @@
+---
+# Install Docker CE via the convenience script from get.docker.com and
+# add the default `ubuntu` user to the `docker` group so it can drive
+# the daemon without sudo after the next login.
+- name: Install Docker
+  hosts: all
+  become: true
+  tasks:
+    - name: Check if docker is already installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Run get.docker.com installer
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsSL https://get.docker.com | sh
+      args:
+        executable: /bin/bash
+      when: docker_check.rc != 0
+
+    - name: Ensure docker service is enabled and started
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Add ubuntu user to docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true

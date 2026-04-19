@@ -1,0 +1,22 @@
+---
+# Install a common set of CLI developer tools.
+- name: Install dev tools
+  hosts: all
+  become: true
+  tasks:
+    - name: apt install common tools
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - curl
+          - git
+          - htop
+          - jq
+          - net-tools
+          - tree
+          - unzip
+          - vim
+          - wget
+        state: present
+        update_cache: true
+        cache_valid_time: 3600

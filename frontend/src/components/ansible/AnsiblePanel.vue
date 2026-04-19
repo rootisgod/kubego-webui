@@ -23,6 +23,7 @@ const statusLoading = ref(true)
 // Playbook CRUD state
 const playbooks = ref([])
 const selectedPlaybook = ref(null)
+const selectedIsBuiltIn = ref(false)
 const editorContent = ref('')
 const originalContent = ref('')
 const dirty = computed(() => editorContent.value !== originalContent.value)
@@ -32,6 +33,10 @@ const saving = ref(false)
 const confirmAction = ref(null)
 const editorFullscreen = ref(false)
 const wordWrap = ref(false)
+
+const userPlaybooks = computed(() => playbooks.value.filter(p => !p.builtIn))
+const builtInPlaybooks = computed(() => playbooks.value.filter(p => p.builtIn))
+const isEditable = computed(() => isNew.value || (selectedPlaybook.value && !selectedIsBuiltIn.value))
 
 // Target VM selection
 const targetVM = ref('')
@@ -106,6 +111,7 @@ async function selectPlaybook(name) {
   try {
     const result = await api.getPlaybook(name)
     selectedPlaybook.value = name
+    selectedIsBuiltIn.value = !!result.builtIn
     editorContent.value = result.content
     originalContent.value = result.content
     isNew.value = false
@@ -115,6 +121,7 @@ async function selectPlaybook(name) {
 function newPlaybook() {
   if (dirty.value && !confirm('Discard unsaved changes?')) return
   selectedPlaybook.value = null
+  selectedIsBuiltIn.value = false
   editorContent.value = '---\n- hosts: all\n  become: true\n  tasks:\n    - name: Example task\n      ping:\n'
   originalContent.value = ''
   isNew.value = true
@@ -352,8 +359,9 @@ onUnmounted(() => {
       <!-- Toolbar -->
       <div class="flex items-center gap-2 flex-shrink-0">
         <ActionButton label="New" :icon="Plus" @click="newPlaybook" :disabled="isRunning" />
-        <ActionButton label="Save" :icon="Save" variant="success" @click="save" :disabled="!dirty && !isNew || saving || isRunning" />
-        <ActionButton label="Delete" :icon="Trash2" variant="danger" @click="confirmDelete" :disabled="!selectedPlaybook || isNew || isRunning" />
+        <ActionButton label="Save" :icon="Save" variant="success" @click="save" :disabled="(!dirty && !isNew) || saving || isRunning || (!!selectedPlaybook && selectedIsBuiltIn && !isNew)" />
+        <ActionButton label="Delete" :icon="Trash2" variant="danger" @click="confirmDelete" :disabled="!selectedPlaybook || isNew || isRunning || selectedIsBuiltIn" />
+        <span v-if="selectedIsBuiltIn && !isNew" class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--muted)]/20 text-[var(--muted)]">read-only</span>
         <div class="flex-1" />
         <button
           v-if="selectedPlaybook || isNew"
@@ -381,19 +389,34 @@ onUnmounted(() => {
       <div class="flex gap-4 flex-1 min-h-0">
         <!-- Playbook list -->
         <div class="w-44 flex-shrink-0 bg-[var(--bg-surface)] rounded-lg border border-[var(--border)] overflow-auto">
-          <div class="p-2 text-xs text-[var(--text-secondary)] uppercase tracking-wider font-medium">Playbooks</div>
-          <div v-if="playbooks.length === 0" class="px-3 py-2 text-xs text-[var(--muted)]">No playbooks yet</div>
+          <div class="p-2 text-xs text-[var(--text-secondary)] uppercase tracking-wider font-medium">Your Playbooks</div>
+          <div v-if="userPlaybooks.length === 0" class="px-3 py-2 text-xs text-[var(--muted)]">No playbooks yet</div>
           <button
-            v-for="pb in playbooks"
+            v-for="pb in userPlaybooks"
             :key="pb.name"
             class="w-full text-left px-3 py-1.5 text-sm truncate transition-colors"
-            :class="selectedPlaybook === pb.name
+            :class="selectedPlaybook === pb.name && !selectedIsBuiltIn
               ? 'bg-[var(--accent)]/20 text-[var(--accent)]'
               : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]'"
             @click="selectPlaybook(pb.name)"
           >
             {{ pb.name }}
           </button>
+          <template v-if="builtInPlaybooks.length">
+            <div class="p-2 pt-3 text-xs text-[var(--text-secondary)] uppercase tracking-wider font-medium border-t border-[var(--border)] mt-1">Built-in Examples</div>
+            <button
+              v-for="pb in builtInPlaybooks"
+              :key="'builtin-' + pb.name"
+              class="w-full text-left px-3 py-1.5 text-sm truncate transition-colors flex items-center justify-between gap-2"
+              :class="selectedPlaybook === pb.name && selectedIsBuiltIn
+                ? 'bg-[var(--accent)]/20 text-[var(--accent)]'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]'"
+              @click="selectPlaybook(pb.name)"
+              :title="pb.name + ' (read-only)'"
+            >
+              <span class="truncate">{{ pb.name }}</span>
+            </button>
+          </template>
         </div>
 
         <!-- Editor -->
@@ -408,7 +431,7 @@ onUnmounted(() => {
             />
           </div>
           <div class="flex-1 min-h-0" v-if="selectedPlaybook || isNew">
-            <PlaybookEditor v-model="editorContent" :fullscreen="editorFullscreen" :word-wrap="wordWrap" @exit-fullscreen="editorFullscreen = false" />
+            <PlaybookEditor v-model="editorContent" :readonly="!isEditable" :fullscreen="editorFullscreen" :word-wrap="wordWrap" @exit-fullscreen="editorFullscreen = false" />
           </div>
           <div v-else class="flex-1 flex items-center justify-center text-sm text-[var(--muted)]">
             Select a playbook or create a new one

@@ -21,6 +21,7 @@ type Server struct {
 	buildTime          string
 	gitCommit          string
 	builtinTemplatesFS embed.FS
+	builtinPlaybooksFS embed.FS
 	launches           *launchTracker
 	sessions           *sessionStore
 	// cfgMu serialises read/modify/write of Config. Gates every mutation:
@@ -38,7 +39,7 @@ type Server struct {
 	k9s           *k9sSessionStore
 }
 
-func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS embed.FS) *Server {
+func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS, builtinPlaybooksFS embed.FS) *Server {
 	s := &Server{
 		clusters:           clusters,
 		cfg:                cfg,
@@ -48,6 +49,7 @@ func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath strin
 		buildTime:          buildTime,
 		gitCommit:          gitCommit,
 		builtinTemplatesFS: builtinTemplatesFS,
+		builtinPlaybooksFS: builtinPlaybooksFS,
 		launches:           newLaunchTracker(),
 		sessions:           newSessionStore(24 * time.Hour),
 		loginLimiter:       newLoginRateLimiter(5, time.Minute),
