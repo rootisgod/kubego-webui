@@ -106,6 +106,20 @@ func (noClusterClient) ExposeVMPort(string, int) (IngressInfo, error) {
 }
 func (noClusterClient) DeleteVMIngress(string, string) error { return ErrNoActiveCluster }
 
+func (noClusterClient) ListImageUploads() ([]ImageUpload, error) {
+	return nil, ErrNoActiveCluster
+}
+func (noClusterClient) CreateImageUpload(string, string, string, int) error {
+	return ErrNoActiveCluster
+}
+func (noClusterClient) UploadImageBytes(context.Context, string, io.Reader, int64) error {
+	return ErrNoActiveCluster
+}
+func (noClusterClient) DeleteImageUpload(string) error { return ErrNoActiveCluster }
+func (noClusterClient) LaunchWindowsVM(WindowsLaunchRequest) (string, error) {
+	return "", ErrNoActiveCluster
+}
+
 func (noClusterClient) ClusterResources() (ClusterResources, error) {
 	return ClusterResources{}, ErrNoActiveCluster
 }

@@ -27,12 +27,15 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 }
 
 // bodySizeLimitMiddleware caps request bodies on API endpoints to prevent OOM.
-// Excludes file uploads (multipart) which have their own limit via ParseMultipartForm.
+// Excludes multipart uploads (own limit via ParseMultipartForm) and the
+// CDI image-data stream where ISO payloads can be many GB.
 func bodySizeLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAPIPath(r.URL.Path) && r.Body != nil {
 			ct := r.Header.Get("Content-Type")
-			if !strings.HasPrefix(ct, "multipart/") {
+			isMultipart := strings.HasPrefix(ct, "multipart/")
+			isImageData := strings.HasPrefix(r.URL.Path, "/api/v1/images/uploads/") && strings.HasSuffix(r.URL.Path, "/data")
+			if !isMultipart && !isImageData {
 				r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 			}
 		}

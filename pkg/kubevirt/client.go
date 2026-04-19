@@ -118,6 +118,18 @@ type Client interface {
 	ExposeVMPort(vmName string, port int) (IngressInfo, error)
 	DeleteVMIngress(vmName, id string) error
 
+	// Image uploads (Tier 1-D / Windows). CDI-backed: a DataVolume with
+	// source: upload is provisioned, CDI mints a token, bytes are
+	// streamed to the cdi-uploadproxy service via the apiserver proxy.
+	ListImageUploads() ([]ImageUpload, error)
+	CreateImageUpload(pvcName, displayName, kind string, sizeGB int) error
+	UploadImageBytes(ctx context.Context, pvcName string, body io.Reader, contentLength int64) error
+	DeleteImageUpload(pvcName string) error
+
+	// LaunchWindowsVM provisions an autounattend ConfigMap + a VM spec
+	// with the UEFI/TPM/CD-ROM plumbing Windows setup expects.
+	LaunchWindowsVM(req WindowsLaunchRequest) (string, error)
+
 	// Cluster-level metrics (replaces PassGo's per-host resource call)
 	ClusterResources() (ClusterResources, error)
 	ClusterInfo() (ClusterInfo, error)

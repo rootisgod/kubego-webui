@@ -188,6 +188,15 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/k9s/sessions/{sessionId}", s.handleDeleteK9sSession)
 	mux.HandleFunc("GET /api/v1/k9s/sessions/{sessionId}/ws", s.handleK9sWS)
 
+	// Image uploads (CDI-backed, for Windows ISOs / custom qcow2 / virtio-win)
+	mux.HandleFunc("GET /api/v1/images/uploads", s.handleListImageUploads)
+	mux.HandleFunc("POST /api/v1/images/uploads", s.handleCreateImageUpload)
+	mux.HandleFunc("POST /api/v1/images/uploads/{name}/data", s.handleUploadImageData)
+	mux.HandleFunc("DELETE /api/v1/images/uploads/{name}", s.handleDeleteImageUpload)
+
+	// Windows VM create (boots from an uploaded ISO + autounattend.xml)
+	mux.HandleFunc("POST /api/v1/vms/windows", s.rateLimited(s.handleCreateWindowsVM))
+
 	// System
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)
 	mux.HandleFunc("GET /api/v1/cluster/resources", s.handleClusterResources)

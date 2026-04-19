@@ -106,6 +106,38 @@ export const listVMIngresses = (vmName) => request('GET', `/vms/${vmName}/ingres
 export const createVMIngress = (vmName, remotePort) => request('POST', `/vms/${vmName}/ingress`, { remote_port: remotePort })
 export const deleteVMIngress = (vmName, id) => request('DELETE', `/vms/${vmName}/ingress/${id}`)
 
+// Image uploads (CDI-backed)
+export const listImageUploads = () => request('GET', '/images/uploads')
+export const createImageUpload = (opts) => request('POST', '/images/uploads', opts)
+export const deleteImageUpload = (pvcName) => request('DELETE', `/images/uploads/${encodeURIComponent(pvcName)}`)
+// uploadImageData streams a File/Blob with XHR so the UI can render progress.
+export function uploadImageData(pvcName, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', API_BASE + `/images/uploads/${encodeURIComponent(pvcName)}/data`)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.withCredentials = true
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total)
+    })
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        let msg = xhr.responseText
+        try { msg = JSON.parse(msg).error || msg } catch { /* keep raw */ }
+        reject(new ApiError(xhr.status, msg))
+      }
+    })
+    xhr.addEventListener('error', () => reject(new ApiError(0, 'network error')))
+    xhr.addEventListener('abort', () => reject(new ApiError(0, 'upload aborted')))
+    xhr.send(file)
+  })
+}
+
+// Windows VM create
+export const createWindowsVM = (opts) => request('POST', '/vms/windows', opts)
+
 // Snapshots
 export const listSnapshots = (vmName) => request('GET', `/vms/${vmName}/snapshots`)
 export const createSnapshot = (vmName, name, comment) => request('POST', `/vms/${vmName}/snapshots`, { name, comment })

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useVmStore } from '../../stores/vmStore.js'
 import { useToastStore } from '../../stores/toastStore.js'
 import * as api from '../../api/client.js'
-import { Copy, ExternalLink, Plus, Trash2, RefreshCw, Terminal, Globe, Cable, Loader2, Package, Download } from 'lucide-vue-next'
+import { Copy, ExternalLink, Plus, Trash2, RefreshCw, Terminal, Globe, Cable, Loader2, Package, Download, MonitorSmartphone } from 'lucide-vue-next'
 import KindProgressModal from '../modals/KindProgressModal.vue'
 
 const store = useVmStore()
@@ -147,6 +147,30 @@ function copyToClipboard(text) {
   )
 }
 
+function downloadRdpFile(f) {
+  const content = [
+    'full address:s:localhost:' + f.local_port,
+    'username:s:Administrator',
+    'authentication level:i:0',
+    'prompt for credentials:i:1',
+    'redirectclipboard:i:1',
+    'screen mode id:i:1',
+    'desktopwidth:i:1920',
+    'desktopheight:i:1080',
+    'session bpc:i:32',
+    'audiomode:i:0',
+  ].join('\r\n') + '\r\n'
+  const blob = new Blob([content], { type: 'application/x-rdp' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${f.vm}.rdp`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 function sshCommand(f) {
   const user = vm.value?.release?.startsWith('debian') ? 'debian'
     : vm.value?.release?.startsWith('fedora') ? 'fedora'
@@ -167,6 +191,7 @@ function proxyUrl(f) {
 function protocolIcon(p) {
   if (p === 'ssh') return Terminal
   if (p === 'http') return Globe
+  if (p === 'rdp') return MonitorSmartphone
   return Cable
 }
 
@@ -205,7 +230,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Quick actions -->
-    <div v-if="isRunning" class="grid grid-cols-3 gap-2">
+    <div v-if="isRunning" class="grid grid-cols-2 gap-2">
       <button
         @click="createForward(22, 'ssh', 'SSH')"
         :disabled="creating"
@@ -221,6 +246,14 @@ onBeforeUnmount(() => {
       >
         <Globe class="w-4 h-4" />
         Forward HTTP (:80)
+      </button>
+      <button
+        @click="createForward(3389, 'rdp', 'RDP')"
+        :disabled="creating"
+        class="flex items-center justify-center gap-2 px-3 py-2.5 text-sm rounded bg-[var(--bg-surface)] border border-[var(--border)] hover:border-[var(--accent)] transition-colors disabled:opacity-40"
+      >
+        <MonitorSmartphone class="w-4 h-4" />
+        Forward RDP (:3389)
       </button>
       <button
         @click="showCustom = !showCustom"
@@ -304,6 +337,26 @@ onBeforeUnmount(() => {
           >
             <Copy class="w-3.5 h-3.5" />
           </button>
+        </div>
+
+        <!-- RDP: show localhost:port + one-click .rdp download -->
+        <div v-else-if="f.protocol === 'rdp'" class="mt-2 space-y-1.5">
+          <div class="flex items-center gap-1.5">
+            <code class="flex-1 px-2 py-1.5 rounded bg-[var(--bg-primary)] text-xs font-mono text-[var(--text-primary)] overflow-x-auto whitespace-nowrap">
+              localhost:{{ f.local_port }} · user Administrator
+            </code>
+            <button
+              @click="downloadRdpFile(f)"
+              class="flex items-center gap-1 px-2 py-1.5 rounded bg-[var(--accent)] text-white hover:bg-blue-600 transition-colors text-xs"
+              title="Download .rdp"
+            >
+              <Download class="w-3.5 h-3.5" />
+              .rdp
+            </button>
+          </div>
+          <p class="text-[11px] text-[var(--text-secondary)]">
+            Open the downloaded file with Microsoft Remote Desktop (native or mstsc.exe). Password is whatever you set at VM create time.
+          </p>
         </div>
 
         <!-- HTTP: show proxy URL -->

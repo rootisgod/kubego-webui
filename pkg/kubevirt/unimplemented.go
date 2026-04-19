@@ -218,6 +218,22 @@ func (c *unimplementedClient) ExposeVMPort(string, int) (IngressInfo, error) {
 }
 func (c *unimplementedClient) DeleteVMIngress(string, string) error { return ErrNotImplemented }
 
+// ----- image uploads -----
+
+func (c *unimplementedClient) ListImageUploads() ([]ImageUpload, error) {
+	return nil, ErrNotImplemented
+}
+func (c *unimplementedClient) CreateImageUpload(string, string, string, int) error {
+	return ErrNotImplemented
+}
+func (c *unimplementedClient) UploadImageBytes(context.Context, string, io.Reader, int64) error {
+	return ErrNotImplemented
+}
+func (c *unimplementedClient) DeleteImageUpload(string) error { return ErrNotImplemented }
+func (c *unimplementedClient) LaunchWindowsVM(WindowsLaunchRequest) (string, error) {
+	return "", ErrNotImplemented
+}
+
 // ----- cluster -----
 
 func (c *unimplementedClient) ClusterResources() (ClusterResources, error) {
