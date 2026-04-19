@@ -226,6 +226,9 @@ func (c *unimplementedClient) ListImageUploads() ([]ImageUpload, error) {
 func (c *unimplementedClient) CreateImageUpload(string, string, string, int) error {
 	return ErrNotImplemented
 }
+func (c *unimplementedClient) CreateImageImport(string, string, string, int, string) error {
+	return ErrNotImplemented
+}
 func (c *unimplementedClient) UploadImageBytes(context.Context, string, io.Reader, int64) error {
 	return ErrNotImplemented
 }

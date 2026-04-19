@@ -109,6 +109,7 @@ export const deleteVMIngress = (vmName, id) => request('DELETE', `/vms/${vmName}
 // Image uploads (CDI-backed)
 export const listImageUploads = () => request('GET', '/images/uploads')
 export const createImageUpload = (opts) => request('POST', '/images/uploads', opts)
+export const createImageImport = (opts) => request('POST', '/images/imports', opts)
 export const deleteImageUpload = (pvcName) => request('DELETE', `/images/uploads/${encodeURIComponent(pvcName)}`)
 // uploadImageData streams a File/Blob with XHR so the UI can render progress.
 export function uploadImageData(pvcName, file, onProgress) {

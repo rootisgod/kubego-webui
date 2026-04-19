@@ -112,6 +112,9 @@ func (noClusterClient) ListImageUploads() ([]ImageUpload, error) {
 func (noClusterClient) CreateImageUpload(string, string, string, int) error {
 	return ErrNoActiveCluster
 }
+func (noClusterClient) CreateImageImport(string, string, string, int, string) error {
+	return ErrNoActiveCluster
+}
 func (noClusterClient) UploadImageBytes(context.Context, string, io.Reader, int64) error {
 	return ErrNoActiveCluster
 }

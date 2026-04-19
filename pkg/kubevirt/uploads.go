@@ -157,6 +157,81 @@ func (c *kubevirtClient) CreateImageUpload(pvcName, displayName, kind string, si
 	return nil
 }
 
+// CreateImageImport provisions a DataVolume that pulls its contents from
+// `sourceURL` via CDI's importer pod (`source: http`). Unlike the upload
+// flow, this is fire-and-forget: CDI runs the import asynchronously and
+// the DV phase progresses ImportScheduled → ImportInProgress → Succeeded.
+// The PVC size must be large enough to hold the fetched payload plus
+// CDI's overhead — callers should size generously since the importer
+// will fail with "no space left" rather than auto-resize.
+func (c *kubevirtClient) CreateImageImport(pvcName, displayName, kind string, sizeGB int, sourceURL string) error {
+	if pvcName == "" {
+		return fmt.Errorf("pvc name is required")
+	}
+	if !pvcNamePattern.MatchString(pvcName) {
+		return fmt.Errorf("invalid pvc name: must be a lowercase DNS label (letters, digits, hyphens)")
+	}
+	if sizeGB < 1 {
+		return fmt.Errorf("size must be at least 1 GB")
+	}
+	if kind == "" {
+		kind = "iso"
+	}
+	sourceURL = strings.TrimSpace(sourceURL)
+	if sourceURL == "" {
+		return fmt.Errorf("source url is required")
+	}
+	if !strings.HasPrefix(sourceURL, "http://") && !strings.HasPrefix(sourceURL, "https://") {
+		return fmt.Errorf("source url must start with http:// or https://")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	dv := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": dataVolumeGVR.Group + "/" + dataVolumeGVR.Version,
+		"kind":       "DataVolume",
+		"metadata": map[string]any{
+			"name":      pvcName,
+			"namespace": c.namespace,
+			"labels": map[string]any{
+				imageUploadLabel:               "true",
+				"app.kubernetes.io/managed-by": "kubego",
+			},
+			"annotations": map[string]any{
+				imageUploadNameAnnotation: displayName,
+				imageUploadKindAnnotation: kind,
+				"cdi.kubevirt.io/storage.bind.immediate.requested": "true",
+			},
+		},
+		"spec": map[string]any{
+			"source": map[string]any{
+				"http": map[string]any{
+					"url": sourceURL,
+				},
+			},
+			"storage": map[string]any{
+				"accessModes": []any{"ReadWriteOnce"},
+				"volumeMode":  "Filesystem",
+				"resources": map[string]any{
+					"requests": map[string]any{
+						"storage": fmt.Sprintf("%dGi", sizeGB),
+					},
+				},
+			},
+		},
+	}}
+
+	_, err := c.dyn.Resource(dataVolumeGVR).Namespace(c.namespace).Create(ctx, dv, metav1.CreateOptions{})
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("image %q already exists", pvcName)
+		}
+		return fmt.Errorf("create DataVolume: %w", err)
+	}
+	return nil
+}
+
 // UploadImageBytes streams `contentLength` bytes from `body` into the
 // previously-created DataVolume. The flow is: wait for UploadReady,
 // request a token from CDI, POST the bytes to cdi-uploadproxy via the

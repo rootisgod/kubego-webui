@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useToastStore } from '../../stores/toastStore.js'
 import * as api from '../../api/client.js'
-import { Disc, Upload, Trash2, RefreshCw, Loader2, CheckCircle2, AlertCircle, HelpCircle } from 'lucide-vue-next'
+import { Disc, Upload, Trash2, RefreshCw, Loader2, CheckCircle2, AlertCircle, HelpCircle, Link2 } from 'lucide-vue-next'
 
 const toasts = useToastStore()
 
@@ -18,6 +18,12 @@ const uploadSizeGB = ref(10)
 const uploadProgress = ref({ loaded: 0, total: 0 })
 const fileInput = ref(null)
 const dragActive = ref(false)
+
+// "file" = browser → CDI uploadproxy (streamed via this server). "url"
+// = CDI's own importer pod pulls the URL — no bytes go through us.
+const sourceMode = ref('file')
+const importURL = ref('')
+const importing = ref(false)
 
 let pollTimer = null
 
@@ -88,6 +94,57 @@ async function startUpload(file) {
   }
 }
 
+function looksLikeISOURL(url) {
+  try {
+    const u = new URL(url)
+    return /\.iso(\?|#|$)/i.test(u.pathname)
+  } catch {
+    return false
+  }
+}
+
+async function startImport() {
+  const url = importURL.value.trim()
+  if (!url) {
+    toasts.error('Enter a URL to import')
+    return
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    toasts.error('URL must start with http:// or https://')
+    return
+  }
+  let displayName = uploadName.value.trim()
+  if (!displayName) {
+    try {
+      const u = new URL(url)
+      const last = u.pathname.split('/').filter(Boolean).pop() || u.hostname
+      displayName = decodeURIComponent(last)
+    } catch {
+      displayName = url
+    }
+  }
+  const kind = uploadKind.value || (looksLikeISOURL(url) ? 'iso' : 'disk')
+  const sizeGB = Math.max(uploadSizeGB.value, 1)
+
+  importing.value = true
+  try {
+    await api.createImageImport({
+      name: displayName,
+      kind,
+      size_gb: sizeGB,
+      url,
+    })
+    toasts.success(`Import started for ${displayName} — CDI is pulling in the background`)
+    importURL.value = ''
+    uploadName.value = ''
+    await refresh()
+  } catch (e) {
+    toasts.error('Import failed: ' + e.message)
+  } finally {
+    importing.value = false
+  }
+}
+
 async function deleteUpload(pvcName) {
   if (!confirm(`Delete image "${pvcName}"? This frees the PVC.`)) return
   try {
@@ -148,11 +205,36 @@ onBeforeUnmount(() => {
     </div>
 
     <p class="text-xs text-[var(--text-secondary)] mb-4">
-      Upload ISO or qcow2 images here to boot VMs from them. Windows installer ISOs and virtio-win live here.
+      Upload any ISO or qcow2 / raw disk image — Linux installers, Windows ISOs, virtio-win, cloud images. Boot a VM from one of these from the VM create panels.
     </p>
+
+    <!-- Source mode tabs -->
+    <div class="flex gap-1 mb-2">
+      <button
+        @click="sourceMode = 'file'"
+        :class="sourceMode === 'file'
+          ? 'bg-[var(--bg-surface)] border-[var(--accent)] text-[var(--text-primary)]'
+          : 'bg-transparent border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+        class="flex items-center gap-1.5 px-3 py-1 text-xs rounded-t border border-b-0 transition-colors"
+      >
+        <Upload class="w-3.5 h-3.5" />
+        Upload file
+      </button>
+      <button
+        @click="sourceMode = 'url'"
+        :class="sourceMode === 'url'
+          ? 'bg-[var(--bg-surface)] border-[var(--accent)] text-[var(--text-primary)]'
+          : 'bg-transparent border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+        class="flex items-center gap-1.5 px-3 py-1 text-xs rounded-t border border-b-0 transition-colors"
+      >
+        <Link2 class="w-3.5 h-3.5" />
+        Import from URL
+      </button>
+    </div>
 
     <!-- Upload form -->
     <div
+      v-if="sourceMode === 'file'"
       class="p-4 rounded border-2 border-dashed transition-colors"
       :class="dragActive ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] bg-[var(--bg-surface)]'"
       @dragover.prevent="dragActive = true"
@@ -165,7 +247,7 @@ onBeforeUnmount(() => {
           <input
             v-model="uploadName"
             type="text"
-            placeholder="Windows 11 23H2"
+            placeholder="Ubuntu 24.04 server"
             :disabled="uploading"
             class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
           />
@@ -220,6 +302,69 @@ onBeforeUnmount(() => {
           ({{ uploadProgress.total ? ((uploadProgress.loaded / uploadProgress.total * 100).toFixed(1)) : 0 }}%)
         </p>
       </div>
+    </div>
+
+    <!-- URL import form -->
+    <div
+      v-else
+      class="p-4 rounded border border-[var(--border)] bg-[var(--bg-surface)]"
+    >
+      <div class="grid grid-cols-[2fr_1fr_1fr_auto] gap-3 items-end">
+        <div>
+          <label class="block text-[11px] text-[var(--text-secondary)] mb-1">Source URL (http / https)</label>
+          <input
+            v-model="importURL"
+            type="url"
+            placeholder="https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server-amd64.iso"
+            :disabled="importing"
+            class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="block text-[11px] text-[var(--text-secondary)] mb-1">Kind</label>
+          <select
+            v-model="uploadKind"
+            :disabled="importing"
+            class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+          >
+            <option value="iso">ISO (bootable)</option>
+            <option value="disk">Disk (qcow2 / raw)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] text-[var(--text-secondary)] mb-1">PVC size (GiB)</label>
+          <input
+            v-model.number="uploadSizeGB"
+            type="number"
+            min="1"
+            max="1024"
+            :disabled="importing"
+            class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+          />
+        </div>
+        <button
+          @click="startImport"
+          :disabled="importing || !importURL"
+          class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-[var(--accent)] text-white hover:bg-blue-600 transition-colors disabled:opacity-40"
+        >
+          <Loader2 v-if="importing" class="w-3.5 h-3.5 animate-spin" />
+          <Link2 v-else class="w-3.5 h-3.5" />
+          {{ importing ? 'Starting…' : 'Import' }}
+        </button>
+      </div>
+      <div class="mt-2">
+        <label class="block text-[11px] text-[var(--text-secondary)] mb-1">Display name (optional — derived from URL filename)</label>
+        <input
+          v-model="uploadName"
+          type="text"
+          placeholder="Ubuntu 24.04 server"
+          :disabled="importing"
+          class="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+        />
+      </div>
+      <p class="text-[11px] text-[var(--text-secondary)] mt-2">
+        CDI's importer pod fetches the URL directly — no bytes flow through your browser. Size the PVC generously: the import fails if the payload doesn't fit.
+      </p>
     </div>
 
     <!-- Images list -->

@@ -123,6 +123,7 @@ type Client interface {
 	// streamed to the cdi-uploadproxy service via the apiserver proxy.
 	ListImageUploads() ([]ImageUpload, error)
 	CreateImageUpload(pvcName, displayName, kind string, sizeGB int) error
+	CreateImageImport(pvcName, displayName, kind string, sizeGB int, sourceURL string) error
 	UploadImageBytes(ctx context.Context, pvcName string, body io.Reader, contentLength int64) error
 	DeleteImageUpload(pvcName string) error
 

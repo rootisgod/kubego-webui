@@ -193,6 +193,8 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/v1/images/uploads", s.handleCreateImageUpload)
 	mux.HandleFunc("POST /api/v1/images/uploads/{name}/data", s.handleUploadImageData)
 	mux.HandleFunc("DELETE /api/v1/images/uploads/{name}", s.handleDeleteImageUpload)
+	// Image imports (CDI-backed source.http — fire-and-forget URL pull)
+	mux.HandleFunc("POST /api/v1/images/imports", s.handleCreateImageImport)
 
 	// Windows VM create (boots from an uploaded ISO + autounattend.xml)
 	mux.HandleFunc("POST /api/v1/vms/windows", s.rateLimited(s.handleCreateWindowsVM))
