@@ -195,6 +195,9 @@ func (c *unimplementedClient) VMEvents(string) ([]EventInfo, error) {
 func (c *unimplementedClient) VMPodLogs(context.Context, string, int64, bool) (io.ReadCloser, error) {
 	return nil, ErrNotImplemented
 }
+func (c *unimplementedClient) FindLauncherPodName(context.Context, string) (string, error) {
+	return "", ErrNotImplemented
+}
 
 // ----- cluster -----
 

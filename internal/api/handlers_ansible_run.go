@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rootisgod/kubego-webui/pkg/kubevirt"
 )
@@ -142,17 +144,29 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		s.cfgMu.Unlock()
 	}
 
+	// Start one kubectl port-forward per target VM so ansible-playbook
+	// can reach them on 127.0.0.1:<random> even when the VM's pod-CIDR
+	// IP isn't routable from this host (the default on KinD).
+	pfCtx, pfCancel := context.WithTimeout(r.Context(), 15*time.Second)
+	portForwards, pfCleanup, err := s.startVMPortForwards(pfCtx, targetVMs)
+	pfCancel()
+	if err != nil {
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
+		writeError(w, http.StatusInternalServerError, "failed to start port-forwards: "+err.Error())
+		return
+	}
+
 	// Generate inventory
 	user := "ubuntu"
 	sshKey := ""
 	if s.cfg.VMDefaults != nil {
 		sshKey = s.cfg.VMDefaults.SSHPrivateKey
 	}
-	if sshKey == "" {
-		sshKey = ""
-	}
-	inventory, err := s.generateInventoryYAML(targetVMs, user, sshKey)
+	inventory, err := s.generateInventoryYAML(targetVMs, user, sshKey, portForwards)
 	if err != nil {
+		pfCleanup()
 		if playbookCleanup != "" {
 			os.Remove(playbookCleanup)
 		}
@@ -160,8 +174,9 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpFile, err := os.CreateTemp("", "passgo-ansible-inventory-*.yml")
+	tmpFile, err := os.CreateTemp("", "kubego-ansible-inventory-*.yml")
 	if err != nil {
+		pfCleanup()
 		if playbookCleanup != "" {
 			os.Remove(playbookCleanup)
 		}
@@ -171,6 +186,7 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 	if _, err := tmpFile.WriteString(inventory); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
+		pfCleanup()
 		if playbookCleanup != "" {
 			os.Remove(playbookCleanup)
 		}
@@ -185,7 +201,14 @@ func (s *Server) handleRunPlaybook(w http.ResponseWriter, r *http.Request) {
 		"ANSIBLE_HOST_KEY_CHECKING=False",
 	)
 
-	s.ansibleRunner.start(req.Playbook, targetVMs, cmd, []string{tmpFile.Name(), playbookCleanup})
+	invPath := tmpFile.Name()
+	s.ansibleRunner.start(req.Playbook, targetVMs, cmd, func() {
+		pfCleanup()
+		os.Remove(invPath)
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
+	})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started", "playbook": req.Playbook})
 }
@@ -307,13 +330,25 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		return
 	}
 
+	pfCtx, pfCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	portForwards, pfCleanup, err := s.startVMPortForwards(pfCtx, vms)
+	pfCancel()
+	if err != nil {
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
+		s.logger.Error("failed to start port-forwards for queued run", "err", err)
+		return
+	}
+
 	user := "ubuntu"
 	sshKey := ""
 	if s.cfg.VMDefaults != nil {
 		sshKey = s.cfg.VMDefaults.SSHPrivateKey
 	}
-	inventory, err := s.generateInventoryYAML(vms, user, sshKey)
+	inventory, err := s.generateInventoryYAML(vms, user, sshKey, portForwards)
 	if err != nil {
+		pfCleanup()
 		if playbookCleanup != "" {
 			os.Remove(playbookCleanup)
 		}
@@ -321,8 +356,9 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		return
 	}
 
-	tmpFile, err := os.CreateTemp("", "passgo-ansible-inventory-*.yml")
+	tmpFile, err := os.CreateTemp("", "kubego-ansible-inventory-*.yml")
 	if err != nil {
+		pfCleanup()
 		if playbookCleanup != "" {
 			os.Remove(playbookCleanup)
 		}
@@ -332,6 +368,7 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 	if _, err := tmpFile.WriteString(inventory); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
+		pfCleanup()
 		if playbookCleanup != "" {
 			os.Remove(playbookCleanup)
 		}
@@ -346,7 +383,14 @@ func (s *Server) startPlaybookRun(playbook string, vms []string) {
 		"ANSIBLE_HOST_KEY_CHECKING=False",
 	)
 
-	s.ansibleRunner.start(playbook, vms, cmd, []string{tmpFile.Name(), playbookCleanup})
+	invPath := tmpFile.Name()
+	s.ansibleRunner.start(playbook, vms, cmd, func() {
+		pfCleanup()
+		os.Remove(invPath)
+		if playbookCleanup != "" {
+			os.Remove(playbookCleanup)
+		}
+	})
 }
 
 // resolvePlaybookPath returns a filesystem path that ansible-playbook can

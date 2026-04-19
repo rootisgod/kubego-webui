@@ -105,6 +105,62 @@ func CleanupTempDirs(dirs []string) {
 	}
 }
 
+// InjectSSHAuthorizedKey merges `pubKey` into the cloud-init document's
+// top-level `ssh_authorized_keys` list. Cloud-init applies that list to
+// the default cloud user (on Ubuntu images: `ubuntu`), so this is the
+// least-invasive way to guarantee we can SSH in without interfering
+// with any user-supplied `users:` block.
+//
+// If content is empty, a minimal `#cloud-config` document is created.
+// Idempotent: re-injecting the same key is a no-op. Existing entries
+// are preserved.
+func InjectSSHAuthorizedKey(content, pubKey string) (string, error) {
+	pubKey = strings.TrimSpace(pubKey)
+	if pubKey == "" {
+		return content, nil
+	}
+
+	if strings.TrimSpace(content) == "" {
+		content = "#cloud-config\n"
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return "", fmt.Errorf("parse cloud-init yaml: %w", err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+
+	// Existing keys may come back as []any or []string depending on
+	// whether YAML parsed them into typed slices. Normalise to []any.
+	var keys []any
+	switch v := doc["ssh_authorized_keys"].(type) {
+	case nil:
+	case []any:
+		keys = v
+	case []string:
+		for _, s := range v {
+			keys = append(keys, s)
+		}
+	default:
+		return "", fmt.Errorf("unexpected type for ssh_authorized_keys: %T", v)
+	}
+	for _, k := range keys {
+		if s, ok := k.(string); ok && strings.TrimSpace(s) == pubKey {
+			return content, nil // already present
+		}
+	}
+	keys = append(keys, pubKey)
+	doc["ssh_authorized_keys"] = keys
+
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal cloud-init yaml: %w", err)
+	}
+	return "#cloud-config\n" + string(out), nil
+}
+
 // ValidateCloudInitYAML checks that content is valid cloud-init YAML.
 // The first non-empty line must be "#cloud-config" — the same rule
 // cloud-init itself enforces in the guest.

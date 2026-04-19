@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -101,7 +100,7 @@ func (ar *ansibleRunner) getCurrent() *ansibleRun {
 	return ar.current
 }
 
-func (ar *ansibleRunner) start(playbook string, vms []string, cmd *exec.Cmd, cleanupPaths []string) *ansibleRun {
+func (ar *ansibleRunner) start(playbook string, vms []string, cmd *exec.Cmd, cleanup func()) *ansibleRun {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	run := &ansibleRun{
@@ -167,13 +166,10 @@ func (ar *ansibleRunner) start(playbook string, vms []string, cmd *exec.Cmd, cle
 			run.Status, fmt.Sprintf("vms=%v exit=%d", run.VMs, exitCode))
 		cancel() // clean up context
 
-		// Clean up any per-run temp files (inventory, extracted built-in
-		// playbook, etc.). The run is finished so ansible-playbook no
-		// longer needs them.
-		for _, p := range cleanupPaths {
-			if p != "" {
-				os.Remove(p)
-			}
+		// Per-run cleanup (temp files, port-forwards). The run is
+		// finished so ansible-playbook no longer needs any of them.
+		if cleanup != nil {
+			cleanup()
 		}
 
 		// Process next queued run

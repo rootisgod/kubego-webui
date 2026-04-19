@@ -83,6 +83,11 @@ func main() {
 		logger.Info("migrated plaintext password to bcrypt hash")
 	}
 
+	if err := config.EnsureSSHKey(cfg, configPath, logger); err != nil {
+		logger.Error("failed to ensure ssh keypair", "err", err)
+		os.Exit(1)
+	}
+
 	if port > 0 {
 		cfg.Listen = fmt.Sprintf(":%d", port)
 	}

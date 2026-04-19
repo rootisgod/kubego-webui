@@ -94,6 +94,11 @@ type Client interface {
 	VMEvents(vmName string) ([]EventInfo, error)
 	VMPodLogs(ctx context.Context, vmName string, tailLines int64, follow bool) (io.ReadCloser, error)
 
+	// FindLauncherPodName returns the name of the newest virt-launcher
+	// pod backing the given VM, or empty if none is Running. Used by
+	// the ansible flow to start a `kubectl port-forward` into the VM.
+	FindLauncherPodName(ctx context.Context, vmName string) (string, error)
+
 	// Cluster-level metrics (replaces PassGo's per-host resource call)
 	ClusterResources() (ClusterResources, error)
 	ClusterInfo() (ClusterInfo, error)

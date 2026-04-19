@@ -108,6 +108,26 @@ func (c *kubevirtClient) VMPodLogs(ctx context.Context, vmName string, tailLines
 	return req.Stream(ctx)
 }
 
+// FindLauncherPodName returns the name of the newest Running
+// virt-launcher pod for the given VM, or empty string if none exist.
+// Used by the ansible flow to find a port-forward target.
+func (c *kubevirtClient) FindLauncherPodName(ctx context.Context, vmName string) (string, error) {
+	pods, err := c.findLauncherPods(ctx, vmName)
+	if err != nil {
+		return "", err
+	}
+	running := make([]corev1.Pod, 0, len(pods))
+	for _, p := range pods {
+		if p.Status.Phase == corev1.PodRunning {
+			running = append(running, p)
+		}
+	}
+	if len(running) == 0 {
+		return "", nil
+	}
+	return pickNewest(running).Name, nil
+}
+
 func (c *kubevirtClient) findLauncherPods(ctx context.Context, vmName string) ([]corev1.Pod, error) {
 	// vm.kubevirt.io/name is set by virt-controller on the VMI spec, and
 	// virt-launcher copies VMI labels onto its pod. This is more reliable

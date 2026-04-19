@@ -12,9 +12,15 @@ type inventoryHost struct {
 	ip   string
 }
 
-// generateInventoryYAML builds an Ansible inventory YAML string from running VMs.
-// filterVMs limits to specific VM names (nil/empty = all running VMs).
-func (s *Server) generateInventoryYAML(filterVMs []string, user, sshKeyPath string) (string, error) {
+// generateInventoryYAML builds an Ansible inventory YAML string from
+// running VMs. filterVMs limits to specific VM names (nil/empty = all
+// running VMs). portForwards is an optional map keyed by VM name whose
+// value is the localhost port forwarded (via `kubectl port-forward`) to
+// the VM's SSH port; when set for a VM, the emitted inventory points
+// that host at 127.0.0.1:<port> so ansible-playbook can reach VMs whose
+// pod-CIDR IP is unreachable from the server process (e.g. VMs running
+// inside KinD). Pass nil for a direct-IP inventory.
+func (s *Server) generateInventoryYAML(filterVMs []string, user, sshKeyPath string, portForwards map[string]int) (string, error) {
 	vms, err := s.kv().ListVMs()
 	if err != nil {
 		return "", fmt.Errorf("failed to list VMs: %w", err)
@@ -56,6 +62,12 @@ func (s *Server) generateInventoryYAML(filterVMs []string, user, sshKeyPath stri
 	if sshKeyPath != "" {
 		fmt.Fprintf(&b, "    ansible_ssh_private_key_file: %s\n", sshKeyPath)
 	}
+	// Skip host-key checking/recording when we're port-forwarding to
+	// 127.0.0.1:<random-port>: every run picks a different port, so the
+	// host key would never match a cached entry anyway.
+	if len(portForwards) > 0 {
+		b.WriteString("    ansible_ssh_common_args: \"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\"\n")
+	}
 
 	// hosts
 	b.WriteString("  hosts:\n")
@@ -63,7 +75,11 @@ func (s *Server) generateInventoryYAML(filterVMs []string, user, sshKeyPath stri
 		b.WriteString("    {}\n")
 	} else {
 		for _, h := range hosts {
-			fmt.Fprintf(&b, "    %s:\n      ansible_host: %s\n", h.name, h.ip)
+			if port, ok := portForwards[h.name]; ok {
+				fmt.Fprintf(&b, "    %s:\n      ansible_host: 127.0.0.1\n      ansible_port: %d\n", h.name, port)
+			} else {
+				fmt.Fprintf(&b, "    %s:\n      ansible_host: %s\n", h.name, h.ip)
+			}
 		}
 	}
 
@@ -113,7 +129,7 @@ func (s *Server) handleAnsibleInventory(w http.ResponseWriter, r *http.Request) 
 		filterVMs = []string{vm}
 	}
 
-	inventory, err := s.generateInventoryYAML(filterVMs, user, sshKey)
+	inventory, err := s.generateInventoryYAML(filterVMs, user, sshKey, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

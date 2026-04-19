@@ -103,17 +103,50 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve built-in cloud-init templates to a temp file
-	cloudInitFile := req.CloudInit
-	if strings.HasPrefix(cloudInitFile, "builtin:") {
-		templateName := strings.TrimPrefix(cloudInitFile, "builtin:")
-		content, err := s.builtinTemplatesFS.ReadFile("cloud-init/" + templateName)
+	// Resolve whatever cloud-init source the caller picked into a single
+	// text body, then inject KubeGo's auto-generated SSH public key so
+	// the Ansible flow (and any SSH-based tooling) can reach the VM
+	// without the user needing to configure keys manually. The final
+	// body is written to a temp file and fed to LaunchVM by path.
+	var (
+		cloudInitContent string
+		origCloudInit    = req.CloudInit
+	)
+	switch {
+	case strings.HasPrefix(req.CloudInit, "builtin:"):
+		templateName := strings.TrimPrefix(req.CloudInit, "builtin:")
+		data, err := s.builtinTemplatesFS.ReadFile("cloud-init/" + templateName)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "built-in template not found: "+templateName)
 			return
 		}
-		tmpFile := filepath.Join(os.TempDir(), "passgo-cloudinit-"+templateName)
-		if err := os.WriteFile(tmpFile, content, 0600); err != nil {
+		cloudInitContent = string(data)
+	case req.CloudInit != "":
+		data, err := os.ReadFile(req.CloudInit)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cloud-init file not readable: "+err.Error())
+			return
+		}
+		cloudInitContent = string(data)
+	}
+
+	pubKey := ""
+	if s.cfg.VMDefaults != nil {
+		pubKey = s.cfg.VMDefaults.SSHPublicKey
+	}
+	if pubKey != "" {
+		merged, err := kubevirt.InjectSSHAuthorizedKey(cloudInitContent, pubKey)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cloud-init rewrite failed: "+err.Error())
+			return
+		}
+		cloudInitContent = merged
+	}
+
+	cloudInitFile := origCloudInit
+	if cloudInitContent != "" {
+		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("kubego-cloudinit-%s-%d.yml", name, os.Getpid()))
+		if err := os.WriteFile(tmpFile, []byte(cloudInitContent), 0600); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write temp cloud-init file")
 			return
 		}
@@ -153,8 +186,9 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 				s.logger.Info("enqueued auto-run playbook", "vm", name, "playbook", profilePlaybook)
 			}
 		}
-		// Clean up temp file if we created one
-		if cloudInitFile != req.CloudInit {
+		// Clean up temp file if we wrote one (always the case when we
+		// injected the SSH key or resolved a built-in template).
+		if cloudInitFile != origCloudInit && cloudInitFile != "" {
 			os.Remove(cloudInitFile)
 		}
 	}()

@@ -85,6 +85,9 @@ func (noClusterClient) VMEvents(string) ([]EventInfo, error) { return nil, ErrNo
 func (noClusterClient) VMPodLogs(context.Context, string, int64, bool) (io.ReadCloser, error) {
 	return nil, ErrNoActiveCluster
 }
+func (noClusterClient) FindLauncherPodName(context.Context, string) (string, error) {
+	return "", ErrNoActiveCluster
+}
 
 func (noClusterClient) ClusterResources() (ClusterResources, error) {
 	return ClusterResources{}, ErrNoActiveCluster
