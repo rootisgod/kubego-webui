@@ -2,6 +2,15 @@
 
 # Install Docker CE and add the default 'ubuntu' user to the docker group.
 
+# Default login: ubuntu / ubuntu (dev convenience only — throwaway VMs).
+chpasswd:
+  expire: false
+  users:
+    - name: ubuntu
+      password: ubuntu
+      type: text
+ssh_pwauth: true
+
 package_update: true
 
 runcmd:
