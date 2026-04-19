@@ -35,6 +35,10 @@ type Config struct {
 	// supplied by the caller. M0 ships single-namespace mode; M6 adds
 	// multi-namespace support.
 	Namespace string
+	// SSHPrivateKeyPath is the private key used to SSH into VMs for exec
+	// and file-transfer operations. The matching public key is injected
+	// into every VM's cloud-init. Empty disables the SSH-backed features.
+	SSHPrivateKeyPath string
 }
 
 // Client is the driver interface KubeGo handlers dispatch through. The
@@ -89,6 +93,7 @@ type Client interface {
 
 	// Subresources
 	Console(ctx context.Context, vmName string) (io.ReadWriteCloser, error)
+	VNC(ctx context.Context, vmName string) (io.ReadWriteCloser, error)
 
 	// Observability
 	VMEvents(vmName string) ([]EventInfo, error)
@@ -98,6 +103,20 @@ type Client interface {
 	// pod backing the given VM, or empty if none is Running. Used by
 	// the ansible flow to start a `kubectl port-forward` into the VM.
 	FindLauncherPodName(ctx context.Context, vmName string) (string, error)
+
+	// StartPortForward opens a long-lived port-forward from an ephemeral
+	// local port to remotePort on the VM's virt-launcher pod. Returns the
+	// local port and a stop function. Used by the Connect panel and the
+	// HTTP reverse-proxy route.
+	StartPortForward(ctx context.Context, vmName string, remotePort int) (localPort int, stop func(), err error)
+
+	// Ingress exposures (Tier 1-B). ControllerStatus reports whether
+	// ingress-nginx is installed; the three VM-scoped methods create,
+	// list, and delete Service+Ingress pairs with a nip.io hostname.
+	IngressControllerStatus() (IngressControllerStatus, error)
+	ListVMIngresses(vmName string) ([]IngressInfo, error)
+	ExposeVMPort(vmName string, port int) (IngressInfo, error)
+	DeleteVMIngress(vmName, id string) error
 
 	// Cluster-level metrics (replaces PassGo's per-host resource call)
 	ClusterResources() (ClusterResources, error)
@@ -122,13 +141,13 @@ func NewClient(logger *slog.Logger, cfg Config) (Client, error) {
 	if ns == "" {
 		ns = inferNamespace(cfg.Kubeconfig)
 	}
-	return buildClientFromRest(logger, restCfg, ns, currentContextName(cfg.Kubeconfig), source)
+	return buildClientFromRest(logger, restCfg, ns, currentContextName(cfg.Kubeconfig), source, cfg.SSHPrivateKeyPath)
 }
 
 // buildClientFromRest constructs a Client from a ready-to-use *rest.Config.
 // Shared by NewClient (single-cluster mode) and Registry (multi-cluster).
 // contextName is stored on the client for display and logging only.
-func buildClientFromRest(logger *slog.Logger, restCfg *rest.Config, namespace, contextName, source string) (Client, error) {
+func buildClientFromRest(logger *slog.Logger, restCfg *rest.Config, namespace, contextName, source, sshPrivateKeyPath string) (Client, error) {
 	kubeClient, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return nil, fmt.Errorf("build kubernetes client: %w", err)
@@ -166,6 +185,7 @@ func buildClientFromRest(logger *slog.Logger, restCfg *rest.Config, namespace, c
 	return &kubevirtClient{
 		unimplementedClient: stub,
 		dyn:                 dyn,
+		sshPrivateKeyPath:   sshPrivateKeyPath,
 	}, nil
 }
 

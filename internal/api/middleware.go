@@ -55,8 +55,15 @@ func authMiddleware(sessions *sessionStore, cfg *config.Config, next http.Handle
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Skip auth for login endpoint, version, and static frontend assets
-		if path == "/api/v1/auth/login" || path == "/api/v1/version" || !isAPIPath(path) {
+		// Skip auth for login endpoint, version, and static frontend assets.
+		// `/proxy/` must be guarded — it's a tunnel to an arbitrary VM port
+		// that bypasses the pod-network isolation the rest of the cluster
+		// relies on.
+		if path == "/api/v1/auth/login" || path == "/api/v1/version" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !isAPIPath(path) && !strings.HasPrefix(path, "/proxy/") {
 			next.ServeHTTP(w, r)
 			return
 		}

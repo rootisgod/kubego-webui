@@ -22,7 +22,8 @@ import (
 // other methods continue to return ErrNotImplemented.
 type kubevirtClient struct {
 	*unimplementedClient
-	dyn dynamic.Interface
+	dyn               dynamic.Interface
+	sshPrivateKeyPath string
 }
 
 var (
@@ -37,18 +38,6 @@ var (
 		Resource: "virtualmachineinstances",
 	}
 )
-
-// UbuntuContainerDiskImage is the default root-disk source for LaunchVM.
-// We use the KubeVirt containerdisks org's Ubuntu image, keyed by release.
-// The image is containerDisk-formatted (disk file under /disk in the
-// container) and is also consumed by CDI's registry importer to populate
-// a PVC when we provision via dataVolumeTemplates.
-func UbuntuContainerDiskImage(release string) string {
-	if release == "" {
-		release = DefaultUbuntuRelease
-	}
-	return "quay.io/containerdisks/ubuntu:" + release
-}
 
 // LaunchVM provisions a Secret holding cloud-init user-data (if any) and
 // then a VirtualMachine CR whose root disk is a DataVolume (PVC backed by
@@ -209,7 +198,7 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, 
 		"spec": map[string]any{
 			"source": map[string]any{
 				"registry": map[string]any{
-					"url": "docker://" + UbuntuContainerDiskImage(release),
+					"url": "docker://" + ContainerDiskImage(release),
 				},
 			},
 			"storage": map[string]any{

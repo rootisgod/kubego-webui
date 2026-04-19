@@ -186,6 +186,9 @@ func (c *unimplementedClient) TransferToVM(string, string, io.Reader) error {
 func (c *unimplementedClient) Console(context.Context, string) (io.ReadWriteCloser, error) {
 	return nil, ErrNotImplemented
 }
+func (c *unimplementedClient) VNC(context.Context, string) (io.ReadWriteCloser, error) {
+	return nil, ErrNotImplemented
+}
 
 // ----- observability -----
 
@@ -198,6 +201,22 @@ func (c *unimplementedClient) VMPodLogs(context.Context, string, int64, bool) (i
 func (c *unimplementedClient) FindLauncherPodName(context.Context, string) (string, error) {
 	return "", ErrNotImplemented
 }
+func (c *unimplementedClient) StartPortForward(context.Context, string, int) (int, func(), error) {
+	return 0, nil, ErrNotImplemented
+}
+
+// ----- ingress -----
+
+func (c *unimplementedClient) IngressControllerStatus() (IngressControllerStatus, error) {
+	return IngressControllerStatus{}, ErrNotImplemented
+}
+func (c *unimplementedClient) ListVMIngresses(string) ([]IngressInfo, error) {
+	return nil, ErrNotImplemented
+}
+func (c *unimplementedClient) ExposeVMPort(string, int) (IngressInfo, error) {
+	return IngressInfo{}, ErrNotImplemented
+}
+func (c *unimplementedClient) DeleteVMIngress(string, string) error { return ErrNotImplemented }
 
 // ----- cluster -----
 

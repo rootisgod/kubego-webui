@@ -102,6 +102,11 @@ func (s *Server) handleSelectCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Old port-forwards point at pods on the previous cluster — close them
+	// so the UI's Connect panel doesn't show stale entries.
+	if s.portForwards != nil {
+		s.portForwards.DropAll()
+	}
 	// Probe the newly-active cluster — surfaces KubeVirt install status in
 	// the server log; not fatal.
 	probeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -161,26 +166,25 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	setSSEHeaders(w, flusher)
 
-	// Step 1: `kind create cluster`. When the host has /dev/kvm, generate
-	// a KIND config that bind-mounts it into the control-plane node so
-	// KubeVirt's device-plugin daemonset advertises devices.kubevirt.io/kvm
-	// and VMs run at near-native speed. Otherwise fall back to software
-	// emulation (useEmulation patched in below).
+	// Step 1: `kind create cluster`. Every KubeGo cluster gets a generated
+	// KIND config so we control the baseline: ingress-ready label on the
+	// control-plane node and extraPortMappings for 80/443 (required for
+	// the one-click ingress-nginx install in Tier 1-B), plus an optional
+	// /dev/kvm bind-mount when the host has hardware virtualisation.
 	kvmPassthrough := hostHasKVM()
-	kindArgs := []string{"create", "cluster"}
+	cfgPath, err := writeKindConfig(req.Name, kvmPassthrough)
+	if err != nil {
+		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: "write kind config: " + err.Error()})
+		return
+	}
+	defer os.Remove(cfgPath)
 	if kvmPassthrough {
-		cfgPath, err := writeKindConfigWithKVM(req.Name)
-		if err != nil {
-			writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: "write kind config: " + err.Error()})
-			return
-		}
-		defer os.Remove(cfgPath)
 		streamLine(w, flusher, "==> Host has /dev/kvm — bind-mounting into the KinD node for hardware acceleration")
-		kindArgs = append(kindArgs, "--config", cfgPath)
 	} else {
 		streamLine(w, flusher, "==> Host has no /dev/kvm — cluster will use software emulation (slow)")
-		kindArgs = append(kindArgs, "--name", req.Name)
 	}
+	streamLine(w, flusher, "==> Binding host ports 80/443 into the KinD node for ingress (free those ports if the command fails)")
+	kindArgs := []string{"create", "cluster", "--config", cfgPath}
 	if kcfg := s.clusters.KubeconfigPath(); kcfg != "" {
 		kindArgs = append(kindArgs, "--kubeconfig", kcfg)
 	}
@@ -343,24 +347,44 @@ func hostHasKVM() bool {
 	return err == nil
 }
 
-// writeKindConfigWithKVM writes a KIND v1alpha4 cluster config to a
-// temp file with /dev/kvm bind-mounted into the control-plane node.
-// Mirrors the YAML that scripts/kind-up.sh generates. Caller must
-// os.Remove the returned path.
-func writeKindConfigWithKVM(name string) (string, error) {
+// writeKindConfig writes a KIND v1alpha4 cluster config with the KubeGo
+// baseline: an `ingress-ready=true` label on the control-plane node and
+// 80/443 host port mappings so ingress-nginx works via the KinD preset.
+// When kvmPassthrough is true, `/dev/kvm` is bind-mounted into the node
+// for hardware-accelerated VMs. Caller must os.Remove the returned path.
+func writeKindConfig(name string, kvmPassthrough bool) (string, error) {
 	f, err := os.CreateTemp("", "kubego-kind-*.yaml")
 	if err != nil {
 		return "", err
 	}
+	var extraMounts string
+	if kvmPassthrough {
+		extraMounts = `    extraMounts:
+      - hostPath: /dev/kvm
+        containerPath: /dev/kvm
+`
+	}
+	// The kubeadmConfigPatches form applies node-labels at kubelet start,
+	// which the ingress-nginx KinD manifest's nodeSelector depends on.
 	yaml := fmt.Sprintf(`kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: %s
 nodes:
   - role: control-plane
-    extraMounts:
-      - hostPath: /dev/kvm
-        containerPath: /dev/kvm
-`, name)
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+%s`, name, extraMounts)
 	if _, werr := f.WriteString(yaml); werr != nil {
 		f.Close()
 		os.Remove(f.Name())

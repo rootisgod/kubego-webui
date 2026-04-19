@@ -107,7 +107,11 @@ func main() {
 	// Kubernetes API at all (no in-cluster config, no kubeconfig) — that's
 	// a hard error because KubeGo is useless without a cluster. Additional
 	// contexts discovered in the kubeconfig are built lazily on selection.
-	clusters, err := kubevirt.NewRegistry(logger, kubeconfig, namespace)
+	sshKeyPath := ""
+	if cfg.VMDefaults != nil {
+		sshKeyPath = cfg.VMDefaults.SSHPrivateKey
+	}
+	clusters, err := kubevirt.NewRegistry(logger, kubeconfig, namespace, sshKeyPath)
 	if err != nil {
 		logger.Error("failed to initialise cluster registry", "err", err)
 		os.Exit(1)

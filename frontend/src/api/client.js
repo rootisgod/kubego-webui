@@ -94,6 +94,18 @@ export async function exportConfig() {
 }
 export const importConfig = (bundle) => request('POST', '/config/import', bundle)
 
+// Port-forwards (Connect panel)
+export const listPortForwards = (vmName) => request('GET', `/vms/${vmName}/portforwards`)
+export const createPortForward = (vmName, opts) => request('POST', `/vms/${vmName}/portforwards`, opts)
+export const deletePortForward = (vmName, id) => request('DELETE', `/vms/${vmName}/portforwards/${id}`)
+
+// Ingress (Tier 1-B one-click expose)
+export const ingressStatus = () => request('GET', '/ingress/status')
+export const installIngress = (onEvent) => streamClusterSSE('POST', '/ingress/install', undefined, onEvent)
+export const listVMIngresses = (vmName) => request('GET', `/vms/${vmName}/ingress`)
+export const createVMIngress = (vmName, remotePort) => request('POST', `/vms/${vmName}/ingress`, { remote_port: remotePort })
+export const deleteVMIngress = (vmName, id) => request('DELETE', `/vms/${vmName}/ingress/${id}`)
+
 // Snapshots
 export const listSnapshots = (vmName) => request('GET', `/vms/${vmName}/snapshots`)
 export const createSnapshot = (vmName, name, comment) => request('POST', `/vms/${vmName}/snapshots`, { name, comment })

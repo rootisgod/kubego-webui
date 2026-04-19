@@ -143,6 +143,19 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		cloudInitContent = merged
 	}
 
+	// Install qemu-guest-agent on first boot. KubeVirt uses the agent for
+	// password reset, filesystem-consistent snapshots, and richer status —
+	// shipping it by default means new features don't need a second pass
+	// over existing VMs.
+	if distro := kubevirt.ImageDistro(req.Release); distro != "" {
+		merged, err := kubevirt.InjectQEMUGuestAgent(cloudInitContent, distro)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "cloud-init guest-agent rewrite failed: "+err.Error())
+			return
+		}
+		cloudInitContent = merged
+	}
+
 	cloudInitFile := origCloudInit
 	if cloudInitContent != "" {
 		tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("kubego-cloudinit-%s-%d.yml", name, os.Getpid()))

@@ -37,6 +37,7 @@ type Server struct {
 	eventLog      *EventLog
 	shells        *shellSessionStore
 	k9s           *k9sSessionStore
+	portForwards  *portForwardManager
 }
 
 func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath string, logger *slog.Logger, version, buildTime, gitCommit string, builtinTemplatesFS, builtinPlaybooksFS embed.FS) *Server {
@@ -60,6 +61,7 @@ func NewServer(clusters *kubevirt.Registry, cfg *config.Config, configPath strin
 	s.ansibleRunner.startFunc = s.startPlaybookRun
 	s.scheduler = newScheduler(s)
 	s.scheduler.start()
+	s.portForwards = newPortForwardManager(s)
 
 	eventsPath := filepath.Join(filepath.Dir(configPath), "events.jsonl")
 	el, err := NewEventLog(eventsPath, logger)
@@ -88,6 +90,9 @@ func (s *Server) Shutdown() {
 	s.loginLimiter.Shutdown()
 	s.apiLimiter.Shutdown()
 	s.k9s.closeAll()
+	if s.portForwards != nil {
+		s.portForwards.Shutdown()
+	}
 	if s.eventLog != nil {
 		s.eventLog.Close()
 	}
@@ -140,6 +145,19 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/v1/vms/{name}/files", s.handleUploadFile)
 	mux.HandleFunc("GET /api/v1/vms/{name}/files/ls", s.handleListFiles)
 	mux.HandleFunc("POST /api/v1/vms/{name}/files/mkdir", s.handleMkdirInVM)
+
+	// Port-forwards (user-facing Connect panel). The HTTP reverse proxy
+	// at /proxy/{vm}/{port}/ uses the same manager — see handlers_proxy.go.
+	mux.HandleFunc("GET /api/v1/vms/{name}/portforwards", s.handleListPortForwards)
+	mux.HandleFunc("POST /api/v1/vms/{name}/portforwards", s.handleCreatePortForward)
+	mux.HandleFunc("DELETE /api/v1/vms/{name}/portforwards/{id}", s.handleDeletePortForward)
+
+	// Ingress (Tier 1-B). Controller install is SSE; expose/list/delete are plain JSON.
+	mux.HandleFunc("GET /api/v1/ingress/status", s.handleIngressStatus)
+	mux.HandleFunc("POST /api/v1/ingress/install", s.handleIngressInstall)
+	mux.HandleFunc("GET /api/v1/vms/{name}/ingress", s.handleListVMIngresses)
+	mux.HandleFunc("POST /api/v1/vms/{name}/ingress", s.handleCreateVMIngress)
+	mux.HandleFunc("DELETE /api/v1/vms/{name}/ingress/{id}", s.handleDeleteVMIngress)
 
 	// Snapshots
 	mux.HandleFunc("GET /api/v1/vms/{name}/snapshots", s.handleListSnapshots)
@@ -257,6 +275,14 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/vms/{name}/shell/sessions", s.handleListShellSessions)
 	mux.HandleFunc("DELETE /api/v1/vms/{name}/shell/sessions/{sessionId}", s.handleDeleteShellSession)
 	mux.HandleFunc("GET /api/v1/vms/{name}/shell/{sessionId}", s.handleShellWS)
+
+	// Graphics (noVNC). Proxies the browser's noVNC client to virt-api's
+	// vnc subresource WebSocket. Single-shot, no session store.
+	mux.HandleFunc("GET /api/v1/vms/{name}/vnc", s.handleVMVNC)
+
+	// HTTP reverse-proxy tunnel into any VM port. Auth-guarded in
+	// authMiddleware — the /proxy/ prefix must never bypass login.
+	mux.HandleFunc("/proxy/{path...}", s.handleVMProxy)
 
 	// Static frontend
 	if staticFS != nil {

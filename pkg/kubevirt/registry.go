@@ -36,9 +36,10 @@ type ContextInfo struct {
 // Client objects are built lazily on first Select() and cached by
 // context name; Invalidate() drops a cached entry (used after delete).
 type Registry struct {
-	logger         *slog.Logger
-	kubeconfigPath string // explicit override; empty = default rules
-	namespace      string
+	logger            *slog.Logger
+	kubeconfigPath    string // explicit override; empty = default rules
+	namespace         string
+	sshPrivateKeyPath string // shared across all built clients
 
 	mu        sync.RWMutex
 	clients   map[string]Client
@@ -49,12 +50,13 @@ type Registry struct {
 // NewRegistry boots the registry and eagerly builds a Client for the
 // initial active context (in-cluster if applicable, else the kubeconfig's
 // current-context). Other contexts are built lazily on Select.
-func NewRegistry(logger *slog.Logger, kubeconfigPath, namespace string) (*Registry, error) {
+func NewRegistry(logger *slog.Logger, kubeconfigPath, namespace, sshPrivateKeyPath string) (*Registry, error) {
 	r := &Registry{
-		logger:         logger,
-		kubeconfigPath: kubeconfigPath,
-		namespace:      namespace,
-		clients:        make(map[string]Client),
+		logger:            logger,
+		kubeconfigPath:    kubeconfigPath,
+		namespace:         namespace,
+		sshPrivateKeyPath: sshPrivateKeyPath,
+		clients:           make(map[string]Client),
 	}
 
 	if kubeconfigPath == "" {
@@ -63,7 +65,7 @@ func NewRegistry(logger *slog.Logger, kubeconfigPath, namespace string) (*Regist
 			if ns == "" {
 				ns = inferNamespace("")
 			}
-			c, err := buildClientFromRest(logger, restCfg, ns, InClusterContext, "in-cluster")
+			c, err := buildClientFromRest(logger, restCfg, ns, InClusterContext, "in-cluster", sshPrivateKeyPath)
 			if err != nil {
 				return nil, err
 			}
@@ -241,7 +243,7 @@ func (r *Registry) buildForContext(contextName string) (Client, error) {
 			ns = n
 		}
 	}
-	return buildClientFromRest(r.logger, restCfg, ns, contextName, "kubeconfig:"+r.resolvedKubeconfigPath())
+	return buildClientFromRest(r.logger, restCfg, ns, contextName, "kubeconfig:"+r.resolvedKubeconfigPath(), r.sshPrivateKeyPath)
 }
 
 func (r *Registry) loadKubeconfig() (*clientcmdapi.Config, error) {

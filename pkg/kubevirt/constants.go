@@ -18,8 +18,6 @@ const (
 	VMNameRandomLength   = 4
 )
 
-var UbuntuReleases = []string{"24.04", "22.04", "20.04", "daily"}
-
 // Name patterns are tighter than multipass: KubeVirt names must be
 // RFC 1123 DNS labels (lowercase alphanumeric + hyphen, start/end with
 // alphanumeric). We mirror that here for VM names; group/profile/playbook

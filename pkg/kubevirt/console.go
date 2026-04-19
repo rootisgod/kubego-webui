@@ -25,12 +25,27 @@ import (
 // Close()s it. Authorisation reuses the driver's rest.Config — bearer
 // token when present, client cert otherwise.
 func (c *kubevirtClient) Console(ctx context.Context, vmName string) (io.ReadWriteCloser, error) {
+	return c.dialVMISubresource(ctx, vmName, "console")
+}
+
+// VNC dials the VMI's vnc subresource. Bytes flow in the RFB protocol —
+// the caller is expected to be a noVNC client (directly or via a WS
+// bridge). The subprotocol negotiated with virt-api is the same as the
+// serial console; KubeVirt does not require a VNC-specific one.
+func (c *kubevirtClient) VNC(ctx context.Context, vmName string) (io.ReadWriteCloser, error) {
+	return c.dialVMISubresource(ctx, vmName, "vnc")
+}
+
+// dialVMISubresource is the shared plumbing for the VMI subresources
+// served over WebSocket by virt-api. Subresource is the final path
+// segment: "console" for serial, "vnc" for graphics, etc.
+func (c *kubevirtClient) dialVMISubresource(ctx context.Context, vmName, subresource string) (io.ReadWriteCloser, error) {
 	if err := ValidateVMName(vmName); err != nil {
 		return nil, err
 	}
-	u, err := consoleWSURL(c.restCfg.Host, c.namespace, vmName)
+	u, err := vmiSubresourceURL(c.restCfg.Host, c.namespace, vmName, subresource)
 	if err != nil {
-		return nil, fmt.Errorf("build console URL: %w", err)
+		return nil, fmt.Errorf("build %s URL: %w", subresource, err)
 	}
 
 	tlsCfg, err := rest.TLSConfigFor(c.restCfg)
@@ -68,12 +83,12 @@ func (c *kubevirtClient) Console(ctx context.Context, vmName string) (io.ReadWri
 		if resp != nil {
 			status = fmt.Sprintf(" (http %s)", resp.Status)
 		}
-		return nil, fmt.Errorf("dial console %s: %w%s", u.String(), err, status)
+		return nil, fmt.Errorf("dial %s %s: %w%s", subresource, u.String(), err, status)
 	}
 	return &consoleStream{ws: conn}, nil
 }
 
-func consoleWSURL(apiHost, namespace, vmName string) (*url.URL, error) {
+func vmiSubresourceURL(apiHost, namespace, vmName, subresource string) (*url.URL, error) {
 	u, err := url.Parse(apiHost)
 	if err != nil {
 		return nil, err
@@ -86,7 +101,7 @@ func consoleWSURL(apiHost, namespace, vmName string) (*url.URL, error) {
 	default:
 		return nil, fmt.Errorf("unsupported apiserver scheme %q", u.Scheme)
 	}
-	u.Path = fmt.Sprintf("/apis/subresources.kubevirt.io/v1/namespaces/%s/virtualmachineinstances/%s/console", namespace, vmName)
+	u.Path = fmt.Sprintf("/apis/subresources.kubevirt.io/v1/namespaces/%s/virtualmachineinstances/%s/%s", namespace, vmName, subresource)
 	u.RawQuery = ""
 	return u, nil
 }

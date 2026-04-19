@@ -80,6 +80,9 @@ func (noClusterClient) TransferToVM(string, string, io.Reader) error   { return 
 func (noClusterClient) Console(context.Context, string) (io.ReadWriteCloser, error) {
 	return nil, ErrNoActiveCluster
 }
+func (noClusterClient) VNC(context.Context, string) (io.ReadWriteCloser, error) {
+	return nil, ErrNoActiveCluster
+}
 
 func (noClusterClient) VMEvents(string) ([]EventInfo, error) { return nil, ErrNoActiveCluster }
 func (noClusterClient) VMPodLogs(context.Context, string, int64, bool) (io.ReadCloser, error) {
@@ -88,6 +91,20 @@ func (noClusterClient) VMPodLogs(context.Context, string, int64, bool) (io.ReadC
 func (noClusterClient) FindLauncherPodName(context.Context, string) (string, error) {
 	return "", ErrNoActiveCluster
 }
+func (noClusterClient) StartPortForward(context.Context, string, int) (int, func(), error) {
+	return 0, nil, ErrNoActiveCluster
+}
+
+func (noClusterClient) IngressControllerStatus() (IngressControllerStatus, error) {
+	return IngressControllerStatus{}, ErrNoActiveCluster
+}
+func (noClusterClient) ListVMIngresses(string) ([]IngressInfo, error) {
+	return nil, ErrNoActiveCluster
+}
+func (noClusterClient) ExposeVMPort(string, int) (IngressInfo, error) {
+	return IngressInfo{}, ErrNoActiveCluster
+}
+func (noClusterClient) DeleteVMIngress(string, string) error { return ErrNoActiveCluster }
 
 func (noClusterClient) ClusterResources() (ClusterResources, error) {
 	return ClusterResources{}, ErrNoActiveCluster

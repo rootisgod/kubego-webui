@@ -161,6 +161,81 @@ func InjectSSHAuthorizedKey(content, pubKey string) (string, error) {
 	return "#cloud-config\n" + string(out), nil
 }
 
+// InjectQEMUGuestAgent appends a distro-appropriate install command for
+// qemu-guest-agent to the cloud-init `runcmd` list. `distro` is the
+// package-manager family returned by ImageDistro — "debian" for apt-based
+// images, "rhel" for dnf-based ones. An unknown or empty distro is a
+// no-op: we'd rather not run than break a guest we can't reason about.
+//
+// Idempotent: if the existing runcmd already mentions qemu-guest-agent, the
+// content is returned unchanged so re-launches and re-applied profiles
+// don't stack duplicates.
+func InjectQEMUGuestAgent(content, distro string) (string, error) {
+	cmd := guestAgentCommand(distro)
+	if cmd == "" {
+		return content, nil
+	}
+
+	if strings.TrimSpace(content) == "" {
+		content = "#cloud-config\n"
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return "", fmt.Errorf("parse cloud-init yaml: %w", err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+
+	var runcmd []any
+	switch v := doc["runcmd"].(type) {
+	case nil:
+	case []any:
+		runcmd = v
+	default:
+		return "", fmt.Errorf("unexpected type for runcmd: %T", v)
+	}
+	for _, entry := range runcmd {
+		if containsQEMUGuestAgent(entry) {
+			return content, nil
+		}
+	}
+	// Use exec form [sh, -c, "…"] so cloud-init runs the full pipeline
+	// in a shell without per-token splitting.
+	runcmd = append(runcmd, []any{"sh", "-c", cmd})
+	doc["runcmd"] = runcmd
+
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal cloud-init yaml: %w", err)
+	}
+	return "#cloud-config\n" + string(out), nil
+}
+
+func guestAgentCommand(distro string) string {
+	switch distro {
+	case "debian":
+		return "DEBIAN_FRONTEND=noninteractive apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y qemu-guest-agent && systemctl enable --now qemu-guest-agent"
+	case "rhel":
+		return "dnf install -y qemu-guest-agent && systemctl enable --now qemu-guest-agent"
+	}
+	return ""
+}
+
+func containsQEMUGuestAgent(entry any) bool {
+	switch v := entry.(type) {
+	case string:
+		return strings.Contains(v, "qemu-guest-agent")
+	case []any:
+		for _, item := range v {
+			if containsQEMUGuestAgent(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ValidateCloudInitYAML checks that content is valid cloud-init YAML.
 // The first non-empty line must be "#cloud-config" — the same rule
 // cloud-init itself enforces in the guest.
