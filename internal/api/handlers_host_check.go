@@ -80,6 +80,7 @@ var toolTargets = []struct {
 	{"kind", []string{"version"}, true, "Required by the UI's Create KinD Cluster flow."},
 	{"kubectl", []string{"version", "--client=true"}, true, "Required to install KubeVirt + CDI into a freshly-created KinD cluster."},
 	{"docker", []string{"--version"}, true, "kind runs its nodes as Docker containers."},
+	{"ansible-playbook", []string{"--version"}, false, "Optional — enables the Ansible panel. Required only if you want to run playbooks against VMs."},
 	{"k9s", []string{"version", "--short"}, false, "Optional — enables the embedded k9s terminal tab for cluster management."},
 	{"task", []string{"--version"}, false, "Optional — the repo's Taskfile targets are convenience wrappers."},
 }
