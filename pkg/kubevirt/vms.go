@@ -191,10 +191,13 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, 
 
 	// DataVolume template: CDI pulls the containerdisk image via its
 	// registry importer (pullMethod defaults to "pod") and writes the
-	// embedded disk file into a PVC sized to diskGB. accessModes and
-	// storageClassName intentionally omitted so the cluster's default
-	// StorageClass picks RWO-capable storage (KinD ships `standard`,
-	// provisioned by rancher.io/local-path).
+	// embedded disk file into a PVC sized to diskGB.
+	//
+	// accessModes + volumeMode are set explicitly. If omitted, CDI falls
+	// back to the cluster's StorageProfile — which for unrecognised
+	// provisioners (e.g. rancher.io/local-path on KinD) has no defaults
+	// and the DV fails with ErrClaimNotValid. storageClassName is still
+	// omitted so the cluster's default SC applies.
 	dvTemplate := map[string]any{
 		"metadata": map[string]any{
 			"name": rootDVName,
@@ -210,6 +213,8 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, 
 				},
 			},
 			"storage": map[string]any{
+				"accessModes": []any{"ReadWriteOnce"},
+				"volumeMode":  "Filesystem",
 				"resources": map[string]any{
 					"requests": map[string]any{
 						"storage": fmt.Sprintf("%dGi", diskGB),
