@@ -10,7 +10,7 @@ import CreateVmModal from '../modals/CreateVmModal.vue'
 import CreateWindowsVmModal from '../modals/CreateWindowsVmModal.vue'
 import ConfirmModal from '../modals/ConfirmModal.vue'
 import ClusterInfoPanel from './ClusterInfoPanel.vue'
-import { Plus, Play, Square, Server, Activity, AlertTriangle, X, Loader2, Cpu, MemoryStick, HardDrive, Download, MonitorSmartphone } from 'lucide-vue-next'
+import { Plus, Play, Square, Server, Activity, AlertTriangle, X, Loader2, Cpu, MemoryStick, HardDrive, Download, MonitorSmartphone, Terminal as TerminalIcon } from 'lucide-vue-next'
 
 const store = useVmStore()
 const toasts = useToastStore()
@@ -190,8 +190,8 @@ async function executeConfirmed() {
 
     <!-- Actions -->
     <div class="flex items-center gap-3">
-      <ActionButton label="Create VM" :icon="Plus" variant="success" @click="showCreateModal = true" />
-      <ActionButton label="Create Windows VM" :icon="MonitorSmartphone" @click="showWindowsModal = true" />
+      <ActionButton label="New Linux VM" :icon="TerminalIcon" variant="success" @click="showCreateModal = true" />
+      <ActionButton label="New Windows VM" :icon="MonitorSmartphone" variant="primary" @click="showWindowsModal = true" />
       <ActionButton label="Start All" :icon="Play" @click="confirmBulk(doStartAll, 'Start all stopped VMs?')" />
       <ActionButton label="Stop All" :icon="Square" @click="confirmBulk(doStopAll, 'Stop all running VMs?')" />
       <ActionButton label="Ansible Inventory" :icon="Download" @click="downloadInventory" />

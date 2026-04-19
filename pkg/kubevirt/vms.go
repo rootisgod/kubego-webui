@@ -222,6 +222,7 @@ func buildVMObject(namespace, name, release string, cpus, memoryMB, diskGB int, 
 			"labels": map[string]any{
 				"app.kubernetes.io/managed-by": "kubego",
 				"kubego.io/release":            release,
+				"kubego.io/os":                 "linux",
 			},
 		},
 		"spec": map[string]any{
@@ -335,6 +336,9 @@ func vmInfoFrom(vm, vmi *unstructured.Unstructured) VMInfo {
 
 	if rel, ok, _ := unstructured.NestedString(vm.Object, "metadata", "labels", "kubego.io/release"); ok {
 		info.Release = rel
+	}
+	if os, ok, _ := unstructured.NestedString(vm.Object, "metadata", "labels", "kubego.io/os"); ok {
+		info.OS = os
 	}
 
 	// CPU cores and memory request are read from spec; the VMI mirrors

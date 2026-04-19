@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-vue-next'
 const props = defineProps({
   label: String,
   icon: Object,
-  variant: { type: String, default: 'default' }, // default, danger, success
+  variant: { type: String, default: 'default' }, // default, danger, success, primary
   disabled: Boolean,
 })
 
@@ -27,6 +27,7 @@ const variants = {
   default: 'bg-[var(--bg-hover)] hover:bg-[var(--accent)] text-[var(--text-primary)]',
   danger: 'bg-red-900/30 hover:bg-[var(--danger)] text-red-300 hover:text-white',
   success: 'bg-green-900/30 hover:bg-[var(--success)] text-green-300 hover:text-white',
+  primary: 'bg-sky-900/30 hover:bg-sky-500 text-sky-300 hover:text-white',
 }
 </script>
 

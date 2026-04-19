@@ -26,6 +26,9 @@ export const useVmStore = defineStore('vms', {
     activeContext: '',     // name of the active context
     inClusterMode: false,  // true when server is running in-cluster (disables kind ops)
     kindAvailable: false,  // true when `kind` is on PATH on the server
+    // OS filter for the sidebar list. "all" | "linux" | "windows".
+    // Empty/missing OS is treated as Linux — older VMs predate the label.
+    osFilter: 'all',
   }),
 
   getters: {
@@ -41,7 +44,20 @@ export const useVmStore = defineStore('vms', {
     launchingCount() { return this.activeLaunches.length },
     failedLaunches: (state) => state.launches.filter(l => l.status === 'failed'),
     selectedVmObjects: (state) => state.vms.filter(vm => state.selectedVms.includes(vm.name)),
-    ungroupedVms: (state) => state.vms.filter(vm => !state.vmGroups[vm.name]),
+    // visibleVms applies the OS filter. The list, group expansion, and
+    // bulk "select all" all read through this so the UI stays consistent.
+    // Selection state itself is kept against the full vms list — toggling
+    // the filter doesn't drop already-selected VMs from the selection.
+    visibleVms(state) {
+      if (state.osFilter === 'all') return state.vms
+      return state.vms.filter(vm => {
+        const os = (vm.os || 'linux').toLowerCase()
+        return state.osFilter === 'windows' ? os === 'windows' : os !== 'windows'
+      })
+    },
+    ungroupedVms() {
+      return this.visibleVms.filter(vm => !this.vmGroups[vm.name])
+    },
     activeCluster: (state) => state.clusters.find(c => c.context === state.activeContext) || null,
     activeClusterColor() { return this.activeCluster?.color || '' },
     activeClusterTag() { return this.activeCluster?.tag || '' },
@@ -49,7 +65,11 @@ export const useVmStore = defineStore('vms', {
 
   actions: {
     groupedVms(groupName) {
-      return this.vms.filter(vm => this.vmGroups[vm.name] === groupName)
+      return this.visibleVms.filter(vm => this.vmGroups[vm.name] === groupName)
+    },
+
+    setOsFilter(value) {
+      this.osFilter = value === 'linux' || value === 'windows' ? value : 'all'
     },
 
     groupSummary(groupName) {
@@ -190,7 +210,9 @@ export const useVmStore = defineStore('vms', {
     },
 
     selectAllVms() {
-      this.selectedVms = this.vms.map(vm => vm.name)
+      // Select all currently-visible VMs — respects the OS filter so users
+      // don't accidentally bulk-act on hidden VMs.
+      this.selectedVms = this.visibleVms.map(vm => vm.name)
     },
 
     clearSelection() {

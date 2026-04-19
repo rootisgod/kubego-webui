@@ -22,6 +22,10 @@ type VMInfo struct {
 	DiskUsageRaw   int64      `json:"disk_usage_raw"`
 	DiskTotalRaw   int64      `json:"disk_total_raw"`
 	Disks          []DiskInfo `json:"disks"`
+	// OS is the kubego.io/os label, used by the frontend to filter
+	// Linux vs Windows VMs. Empty for VMs created before the label
+	// existed — the frontend treats empty as Linux.
+	OS string `json:"os,omitempty"`
 }
 
 // SnapshotInfo represents a VirtualMachineSnapshot CR.

@@ -9,7 +9,7 @@ import CloneVmModal from '../modals/CloneVmModal.vue'
 import GroupNameModal from '../modals/GroupNameModal.vue'
 import MoveToGroupModal from '../modals/MoveToGroupModal.vue'
 import ClusterSwitcher from './ClusterSwitcher.vue'
-import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle, Wrench, Compass, Disc } from 'lucide-vue-next'
+import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle, Wrench, Compass, Disc, Terminal as TerminalIcon, MonitorSmartphone } from 'lucide-vue-next'
 import { ref, computed, markRaw } from 'vue'
 
 const store = useVmStore()
@@ -31,7 +31,17 @@ const bulkMoveToGroup = ref(false)
 const hasSelectedStopped = computed(() => store.selectedVmObjects.some(vm => vm.state === 'Stopped' || vm.state === 'Suspended'))
 const hasSelectedRunning = computed(() => store.selectedVmObjects.some(vm => vm.state === 'Running' || vm.state === 'Suspended'))
 const hasSelectedNonDeleted = computed(() => store.selectedVmObjects.some(vm => vm.state !== 'Deleted'))
-const allSelected = computed(() => store.vms.length > 0 && store.selectedVms.length === store.vms.length)
+// allSelected reflects "every visible VM is selected" so the toggle does
+// the intuitive thing under an active OS filter.
+const allSelected = computed(() => store.visibleVms.length > 0 && store.visibleVms.every(vm => store.selectedVms.includes(vm.name)))
+
+function osIcon(os) {
+  return (os || 'linux').toLowerCase() === 'windows' ? MonitorSmartphone : TerminalIcon
+}
+
+function osIconClass(os) {
+  return (os || 'linux').toLowerCase() === 'windows' ? 'text-sky-400' : 'text-emerald-400'
+}
 const allGroupsExpanded = computed(() => store.groups.length > 0 && store.groups.every(g => store.expandedGroups[g]))
 
 function toggleSelectionMode() {
@@ -453,6 +463,29 @@ async function executeConfirmed() {
         </button>
       </div>
 
+      <!-- OS filter — Linux vs Windows VMs are managed differently
+           enough (RDP vs SSH, autounattend, virtio-win) that hiding one
+           when you're focused on the other reduces noise. -->
+      <div v-if="expanded && store.vms.length > 0" class="ml-7 px-2 py-1 flex items-center gap-1">
+        <button
+          v-for="opt in [
+            { value: 'all', label: 'All', icon: Layers },
+            { value: 'linux', label: 'Linux', icon: TerminalIcon },
+            { value: 'windows', label: 'Windows', icon: MonitorSmartphone },
+          ]"
+          :key="opt.value"
+          @click="store.setOsFilter(opt.value)"
+          :class="store.osFilter === opt.value
+            ? 'bg-[var(--bg-hover)] text-[var(--accent)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          class="flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded transition-colors"
+          :title="`Show ${opt.label} VMs`"
+        >
+          <component :is="opt.icon" class="w-3 h-3" />
+          {{ opt.label }}
+        </button>
+      </div>
+
       <!-- Select all toggle + expand/collapse all -->
       <div v-if="expanded && (selectionMode || store.groups.length > 0)" class="ml-4 px-2 py-1 flex items-center gap-3">
         <button
@@ -537,6 +570,7 @@ async function executeConfirmed() {
                 @click.stop="store.toggleVmSelection(vm.name)"
               />
               <StatusDot :state="vm.state" />
+              <component :is="osIcon(vm.os)" :class="osIconClass(vm.os)" class="w-3 h-3 flex-shrink-0" :title="(vm.os || 'linux') + ' VM'" />
               <span class="truncate">{{ vm.name }}</span>
             </div>
             <div v-if="store.groupedVms(group).length === 0" class="px-2 py-1 text-xs text-[var(--muted)] italic">
@@ -563,6 +597,7 @@ async function executeConfirmed() {
               @click.stop="store.toggleVmSelection(vm.name)"
             />
             <StatusDot :state="vm.state" />
+            <component :is="osIcon(vm.os)" :class="osIconClass(vm.os)" class="w-3 h-3 flex-shrink-0" :title="(vm.os || 'linux') + ' VM'" />
             <span class="truncate">{{ vm.name }}</span>
           </div>
         </TransitionGroup>
@@ -570,6 +605,9 @@ async function executeConfirmed() {
 
       <div v-if="store.vms.length === 0 && store.launchingCount === 0 && expanded" class="ml-8 py-2 text-xs text-[var(--text-secondary)]">
         No VMs
+      </div>
+      <div v-else-if="store.visibleVms.length === 0 && store.launchingCount === 0 && expanded" class="ml-8 py-2 text-xs text-[var(--text-secondary)]">
+        No {{ store.osFilter }} VMs — <button class="underline hover:text-[var(--accent)]" @click="store.setOsFilter('all')">show all</button>
       </div>
       </div><!-- /cluster-scoped region -->
     </div>
