@@ -194,6 +194,31 @@ task clean               Remove all build artifacts
 
 All Taskfile entries are shell commands; `cat Taskfile.yml` if you want the plain invocation. The `install-*` and `kind:install` tasks each call a script in `scripts/` directly — you can run those without Task installed.
 
+### Running as a systemd service (Linux)
+
+To run KubeGo as a managed background service on a Linux host, build a binary and let `service-install` do the rest — it copies the binary into `/usr/local/bin/kubego`, writes `/etc/systemd/system/kubego.service`, then enables and starts it (listening on `:8081` by default):
+
+```bash
+task build               # native binary, or: task build-all (produces dist/kubego-linux-amd64)
+sudo task service-install
+```
+
+The service runs as root and resolves its cluster from in-cluster config, then `$KUBECONFIG`, then `/root/.kube/config`. If none of those are present, `service-install` warns and you can point `ExecStart` at an explicit kubeconfig in the unit file.
+
+```
+task install-binary      Copy the built binary to /usr/local/bin/kubego (sudo)
+task service-install     Install + enable + start the systemd service (sudo)
+task service-start       Start the service (sudo)
+task service-stop        Stop the service (sudo)
+task service-restart     Restart the service (sudo)
+task service-status      systemctl status kubego
+task service-logs        Follow logs (journalctl -u kubego -f)
+task service-remove      Stop, disable, and remove the service + binary (sudo)
+task update-binary-linux Download the latest GitHub release, swap the binary, restart (sudo)
+```
+
+`update-binary-linux` is the no-build update path for an already-deployed host: it pulls the latest `kubego-linux-amd64` release asset, replaces the installed binary, and restarts the service.
+
 ### Layout
 
 ```
