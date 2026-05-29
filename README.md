@@ -4,6 +4,26 @@ A browser UI and REST API for [KubeVirt](https://kubevirt.io/) — drives VMs as
 
 > **Status: pre-alpha.** The binary builds, boots against a cluster, and can create / list / start / stop / delete an Ubuntu 24.04 VM end-to-end via `quay.io/containerdisks/ubuntu:24.04` (a containerDisk — ephemeral, no PVC yet). The KubeGo-shaped Vue UI is wired to the backend with a serial console, logs tab, cluster info page, and a multi-cluster switcher that can create and delete KinD clusters in-browser with KubeVirt+CDI auto-installed. Snapshots, PVC hot-plug disks, resize, guest-agent exec, file transfer, and Ansible still return `ErrNotImplemented`. See [PLAN.md](PLAN.md) for the milestone breakdown.
 
+## Screenshots
+
+The screenshots below use demo data so they can be published without exposing a real cluster, token, kubeconfig, VM address, or local path.
+
+![KubeGo dashboard overview](docs/images/kubego-dashboard-overview.png)
+
+*Cluster dashboard showing active context, KubeVirt/CDI status, node details, resource cards, VM counts, and the VM creation actions.*
+
+![KubeGo image upload and CDI workflow](docs/images/kubego-images-cdi-workflow.png)
+
+*Images page for browser uploads and URL imports backed by CDI DataVolumes, including ISO and disk image status.*
+
+![KubeGo cloud-init templates](docs/images/kubego-cloud-init-templates.png)
+
+*Cloud-init template library with built-in and custom templates plus YAML validation and copy-to-edit workflow.*
+
+![KubeGo create VM modal](docs/images/kubego-create-vm-modal.png)
+
+*Quick create modal for launching a VM from an image with name, image, and size preset fields.*
+
 ## Bare-minimum quickstart on a new machine
 
 This is the shortest path from a clean laptop to "binary running against a local KinD cluster with KubeVirt installed". Four steps; the third one takes 5–10 minutes on first run and the rest are seconds.
