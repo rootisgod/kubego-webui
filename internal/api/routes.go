@@ -179,6 +179,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 
 	// Host machine check (external tools + kernel sysctls).
 	mux.HandleFunc("GET /api/v1/host/check", s.handleHostCheck)
+	mux.HandleFunc("GET /api/v1/host/ports", s.handleCheckHostPorts)
 	mux.HandleFunc("POST /api/v1/host/sysctl", s.handleHostSysctlApply)
 	mux.HandleFunc("POST /api/v1/host/tools/k9s/install", s.handleK9sInstall)
 
@@ -206,6 +207,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/images", s.handleFindImages)
 	mux.HandleFunc("GET /api/v1/cluster/resources", s.handleClusterResources)
 	mux.HandleFunc("GET /api/v1/cluster/info", s.handleClusterInfo)
+	mux.HandleFunc("POST /api/v1/manifests/apply", s.rateLimited(s.handleApplyManifest))
 	mux.HandleFunc("GET /api/v1/config/vm-defaults", s.handleGetVMDefaults)
 	mux.HandleFunc("PUT /api/v1/config/vm-defaults", s.handleUpdateVMDefaults)
 	mux.HandleFunc("GET /api/v1/config/export", s.handleExportConfig)

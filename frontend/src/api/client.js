@@ -71,6 +71,7 @@ export async function getVMPodLogs(name, tail = 500) {
 }
 export const getClusterResources = () => request('GET', '/cluster/resources')
 export const getClusterInfo = () => request('GET', '/cluster/info')
+export const applyManifest = (manifest) => request('POST', '/manifests/apply', { manifest })
 export const getVMDefaults = () => request('GET', '/config/vm-defaults')
 export const updateVMDefaults = (defaults) => request('PUT', '/config/vm-defaults', defaults)
 
@@ -276,6 +277,7 @@ export const setClusterMetadata = (context, meta) =>
 
 // Host machine check (external tools + kernel sysctls)
 export const hostCheck = () => request('GET', '/host/check')
+export const checkHostPorts = (ports) => request('GET', `/host/ports?ports=${ports.join(',')}`)
 export const applyHostSysctls = () => request('POST', '/host/sysctl')
 export const installK9s = (onEvent) => streamClusterSSE('POST', '/host/tools/k9s/install', undefined, onEvent)
 
@@ -331,8 +333,8 @@ export async function streamClusterSSE(method, path, body, onEvent) {
   }
 }
 
-export const createKindCluster = (name, onEvent) =>
-  streamClusterSSE('POST', '/clusters/kind', { name }, onEvent)
+export const createKindCluster = (opts, onEvent) =>
+  streamClusterSSE('POST', '/clusters/kind', typeof opts === 'string' ? { name: opts } : opts, onEvent)
 export const deleteKindCluster = (name, onEvent) =>
   streamClusterSSE('DELETE', `/clusters/kind/${encodeURIComponent(name)}`, undefined, onEvent)
 

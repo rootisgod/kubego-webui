@@ -15,6 +15,7 @@ import K9sPanel from './components/k9s/K9sPanel.vue'
 import VmDetailPanel from './components/vm/VmDetailPanel.vue'
 import CloudInitPanel from './components/cloudinit/CloudInitPanel.vue'
 import ImagesPanel from './components/images/ImagesPanel.vue'
+import DeployPanel from './components/deploy/DeployPanel.vue'
 import SettingsPanel from './components/settings/SettingsPanel.vue'
 import ProfilesPanel from './components/profiles/ProfilesPanel.vue'
 import AnsiblePanel from './components/ansible/AnsiblePanel.vue'
@@ -81,6 +82,7 @@ usePolling(() => {
         <main class="flex-1 overflow-auto relative">
           <CloudInitPanel v-if="store.selectedNode === '__cloud-init__'" />
           <ImagesPanel v-else-if="store.selectedNode === '__images__'" />
+          <DeployPanel v-else-if="store.selectedNode === '__deploy__'" />
           <AnsiblePanel v-else-if="store.selectedNode === '__ansible__'" />
           <ProfilesPanel v-else-if="store.selectedNode === '__profiles__'" />
           <SchedulesPanel v-else-if="store.selectedNode === '__schedules__'" />

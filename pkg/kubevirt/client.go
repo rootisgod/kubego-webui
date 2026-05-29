@@ -136,6 +136,10 @@ type Client interface {
 	// through VNC. Optional UEFI (no SecureBoot).
 	LaunchLinuxISOVM(req LinuxISOLaunchRequest) (string, error)
 
+	// ApplyManifest applies one or more Kubernetes YAML/JSON documents to
+	// the active cluster using server-side apply.
+	ApplyManifest(ctx context.Context, manifest string) ([]AppliedResource, error)
+
 	// Cluster-level metrics (replaces PassGo's per-host resource call)
 	ClusterResources() (ClusterResources, error)
 	ClusterInfo() (ClusterInfo, error)

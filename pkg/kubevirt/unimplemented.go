@@ -93,14 +93,14 @@ func (c *unimplementedClient) probeKubeVirtCR(ctx context.Context) {
 
 // ----- lifecycle -----
 
-func (c *unimplementedClient) ListVMs() ([]VMInfo, error)             { return nil, ErrNotImplemented }
-func (c *unimplementedClient) GetVMInfo(string) (VMInfo, error)       { return VMInfo{}, ErrNotImplemented }
-func (c *unimplementedClient) StartVM(string) error                   { return ErrNotImplemented }
-func (c *unimplementedClient) StopVM(string) error                    { return ErrNotImplemented }
-func (c *unimplementedClient) SuspendVM(string) error                 { return ErrNotImplemented }
-func (c *unimplementedClient) DeleteVM(string, bool) error            { return ErrNotImplemented }
-func (c *unimplementedClient) StartAll() error                        { return ErrNotImplemented }
-func (c *unimplementedClient) StopAll() error                         { return ErrNotImplemented }
+func (c *unimplementedClient) ListVMs() ([]VMInfo, error)       { return nil, ErrNotImplemented }
+func (c *unimplementedClient) GetVMInfo(string) (VMInfo, error) { return VMInfo{}, ErrNotImplemented }
+func (c *unimplementedClient) StartVM(string) error             { return ErrNotImplemented }
+func (c *unimplementedClient) StopVM(string) error              { return ErrNotImplemented }
+func (c *unimplementedClient) SuspendVM(string) error           { return ErrNotImplemented }
+func (c *unimplementedClient) DeleteVM(string, bool) error      { return ErrNotImplemented }
+func (c *unimplementedClient) StartAll() error                  { return ErrNotImplemented }
+func (c *unimplementedClient) StopAll() error                   { return ErrNotImplemented }
 func (c *unimplementedClient) LaunchVMFromImage(VMImageLaunchRequest) (string, error) {
 	return "", ErrNotImplemented
 }
@@ -123,9 +123,9 @@ func (c *unimplementedClient) ExecInVMStreaming(context.Context, string, []strin
 func (c *unimplementedClient) GetVMConfig(string) (VMConfig, error) {
 	return VMConfig{}, ErrNotImplemented
 }
-func (c *unimplementedClient) SetVMCPUs(string, int) error    { return ErrNotImplemented }
-func (c *unimplementedClient) SetVMMemory(string, int) error  { return ErrNotImplemented }
-func (c *unimplementedClient) SetVMDisk(string, int) error    { return ErrNotImplemented }
+func (c *unimplementedClient) SetVMCPUs(string, int) error   { return ErrNotImplemented }
+func (c *unimplementedClient) SetVMMemory(string, int) error { return ErrNotImplemented }
+func (c *unimplementedClient) SetVMDisk(string, int) error   { return ErrNotImplemented }
 func (c *unimplementedClient) GetRawInfo(string) (string, error) {
 	return "", ErrNotImplemented
 }
@@ -238,6 +238,9 @@ func (c *unimplementedClient) LaunchWindowsVM(WindowsLaunchRequest) (string, err
 }
 func (c *unimplementedClient) LaunchLinuxISOVM(LinuxISOLaunchRequest) (string, error) {
 	return "", ErrNotImplemented
+}
+func (c *unimplementedClient) ApplyManifest(context.Context, string) ([]AppliedResource, error) {
+	return nil, ErrNotImplemented
 }
 
 // ----- cluster -----

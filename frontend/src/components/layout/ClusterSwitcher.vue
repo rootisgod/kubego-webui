@@ -41,8 +41,9 @@ function askCreateKind() {
   createPrompt.value = true
 }
 
-async function doCreateKind(name) {
+async function doCreateKind(opts) {
   createPrompt.value = false
+  const name = opts.name
   progress.value = {
     title: `Creating KinD cluster "${name}"...`,
     status: 'running',
@@ -50,7 +51,7 @@ async function doCreateKind(name) {
     errorMessage: '',
   }
   try {
-    await api.createKindCluster(name, (ev) => {
+    await api.createKindCluster(opts, (ev) => {
       if (ev.type === 'output') progress.value.lines.push(ev.line)
     })
     progress.value.status = 'done'

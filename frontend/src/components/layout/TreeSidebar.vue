@@ -9,12 +9,13 @@ import CloneVmModal from '../modals/CloneVmModal.vue'
 import GroupNameModal from '../modals/GroupNameModal.vue'
 import MoveToGroupModal from '../modals/MoveToGroupModal.vue'
 import ClusterSwitcher from './ClusterSwitcher.vue'
-import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle, Wrench, Compass, Disc, Terminal as TerminalIcon, MonitorSmartphone } from 'lucide-vue-next'
+import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle, Wrench, Compass, Disc, Terminal as TerminalIcon, MonitorSmartphone, Rocket } from 'lucide-vue-next'
 import { ref, computed, markRaw } from 'vue'
 
 const store = useVmStore()
 const toasts = useToastStore()
 const expanded = ref(true)
+const webuiExpanded = ref(false)
 const selectionMode = ref(false)
 
 // Context menu state
@@ -34,6 +35,23 @@ const hasSelectedNonDeleted = computed(() => store.selectedVmObjects.some(vm => 
 // allSelected reflects "every visible VM is selected" so the toggle does
 // the intuitive thing under an active OS filter.
 const allSelected = computed(() => store.visibleVms.length > 0 && store.visibleVms.every(vm => store.selectedVms.includes(vm.name)))
+const clusterToolItems = [
+  { id: '__deploy__', label: 'Deploy', icon: markRaw(Rocket) },
+  { id: '__images__', label: 'Images', icon: markRaw(Disc) },
+  { id: '__schedules__', label: 'Schedules', icon: markRaw(Clock) },
+]
+const sharedItemItems = [
+  { id: '__cloud-init__', label: 'Cloud-Init', icon: markRaw(FileCode) },
+  { id: '__ansible__', label: 'Ansible', icon: markRaw(TerminalSquare) },
+  { id: '__profiles__', label: 'Profiles', icon: markRaw(Layers) },
+]
+const webuiItems = [
+  { id: '__webhooks__', label: 'Webhooks', icon: markRaw(Bell) },
+  { id: '__api-tokens__', label: 'API Tokens', icon: markRaw(KeyRound) },
+  { id: '__events__', label: 'Event Log', icon: markRaw(ScrollText) },
+  { id: '__machine-check__', label: 'Machine Check', icon: markRaw(Wrench) },
+  { id: '__settings__', label: 'Settings', icon: markRaw(Settings) },
+]
 
 function osIcon(os) {
   return (os || 'linux').toLowerCase() === 'windows' ? MonitorSmartphone : TerminalIcon
@@ -308,138 +326,70 @@ async function executeConfirmed() {
 <template>
   <aside class="w-60 bg-[var(--bg-secondary)] border-r border-[var(--border)] flex-shrink-0 select-none flex flex-col">
     <div class="p-2 flex-1 overflow-y-auto">
-      <!-- Global nav (not cluster-scoped): templates, schedules, tokens,
-           logs, machine check, app settings. -->
-
-      <!-- Cloud-Init -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__cloud-init__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__cloud-init__')"
+      <button
+        class="w-full flex items-center gap-1 px-1 pb-1 text-[10px] uppercase tracking-wide text-[var(--muted)] hover:text-[var(--text-secondary)] transition-colors"
+        @click="webuiExpanded = !webuiExpanded"
       >
-        <FileCode class="w-4 h-4" />
-        <span class="text-sm">Cloud-Init</span>
+        <ChevronDown v-if="webuiExpanded" class="w-3 h-3" />
+        <ChevronRight v-else class="w-3 h-3" />
+        <span>WebUI</span>
+      </button>
+      <div v-show="webuiExpanded">
+        <div
+          v-for="item in webuiItems"
+          :key="item.id"
+          class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
+          :class="store.selectedNode === item.id ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
+          @click="store.selectNode(item.id)"
+        >
+          <component :is="item.icon" class="w-4 h-4" />
+          <span class="text-sm">{{ item.label }}</span>
+        </div>
       </div>
 
-      <!-- Images (uploaded ISOs / custom qcow2) -->
+      <hr class="my-2 border-[var(--border)]" />
+
+      <div class="text-[10px] uppercase tracking-wide text-[var(--muted)] px-1 pb-1">
+        Shared Assets
+      </div>
       <div
+        v-for="item in sharedItemItems"
+        :key="item.id"
         class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__images__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__images__')"
+        :class="store.selectedNode === item.id ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
+        @click="store.selectNode(item.id)"
       >
-        <Disc class="w-4 h-4" />
-        <span class="text-sm">Images</span>
+        <component :is="item.icon" class="w-4 h-4" />
+        <span class="text-sm">{{ item.label }}</span>
       </div>
 
-      <!-- Ansible -->
+      <hr class="my-2 border-[var(--border)]" />
+
+      <div class="text-[10px] uppercase tracking-wide text-[var(--muted)] px-1 pb-1">
+        Cluster Tools
+      </div>
       <div
+        v-for="item in clusterToolItems"
+        :key="item.id"
         class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__ansible__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__ansible__')"
+        :class="store.selectedNode === item.id ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
+        @click="store.selectNode(item.id)"
       >
-        <TerminalSquare class="w-4 h-4" />
-        <span class="text-sm">Ansible</span>
+        <component :is="item.icon" class="w-4 h-4" />
+        <span class="text-sm">{{ item.label }}</span>
       </div>
 
-      <!-- Profiles -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__profiles__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__profiles__')"
-      >
-        <Layers class="w-4 h-4" />
-        <span class="text-sm">Profiles</span>
+      <hr class="my-2 border-[var(--border)]" />
+
+      <div class="text-[10px] uppercase tracking-wide text-[var(--muted)] px-1 pb-1">
+        Local Machine
       </div>
 
-      <!-- Schedules -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__schedules__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__schedules__')"
-      >
-        <Clock class="w-4 h-4" />
-        <span class="text-sm">Schedules</span>
-      </div>
-
-      <!-- Webhooks -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__webhooks__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__webhooks__')"
-      >
-        <Bell class="w-4 h-4" />
-        <span class="text-sm">Webhooks</span>
-      </div>
-
-      <!-- API Tokens -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__api-tokens__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__api-tokens__')"
-      >
-        <KeyRound class="w-4 h-4" />
-        <span class="text-sm">API Tokens</span>
-      </div>
-
-      <!-- Event Log -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__events__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__events__')"
-      >
-        <ScrollText class="w-4 h-4" />
-        <span class="text-sm">Event Log</span>
-      </div>
-
-      <!-- Machine Check -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__machine-check__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__machine-check__')"
-      >
-        <Wrench class="w-4 h-4" />
-        <span class="text-sm">Machine Check</span>
-      </div>
-
-      <!-- Settings -->
-      <div
-        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
-        :class="store.selectedNode === '__settings__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-        @click="store.selectNode('__settings__')"
-      >
-        <Settings class="w-4 h-4" />
-        <span class="text-sm">Settings</span>
-      </div>
-
-      <hr class="my-1.5 border-[var(--border)]" />
-
-      <!-- Cluster-scoped region: everything below follows the active
-           context. The left-edge stripe uses the active cluster's chosen
-           colour so dev/staging/prod stay visually distinct at a
-           glance — a weak guard against fat-fingering a destructive
-           action on the wrong environment. -->
-      <div
-        class="pl-1 -ml-0.5 transition-colors"
-        :style="store.activeClusterColor ? { borderLeft: `3px solid ${store.activeClusterColor}` } : { borderLeft: '3px solid transparent' }"
-      >
-
-      <!-- Cluster switcher anchors the cluster-scoped section. -->
-      <ClusterSwitcher />
-
-      <!-- Cluster node (root of VM tree) -->
       <div
         class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
         :class="store.selectedNode === null ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)]'"
         @click="selectHost"
-        @contextmenu.prevent="openHostContextMenu"
       >
-        <button
-          class="w-4 h-4 flex items-center justify-center"
-          @click.stop="expanded = !expanded"
-        >
-          <ChevronDown v-if="expanded" class="w-3 h-3" />
-          <ChevronRight v-else class="w-3 h-3" />
-        </button>
         <Box class="w-4 h-4 text-[var(--accent)]" />
         <span class="text-sm font-medium truncate flex-1">{{ store.hostname }}</span>
         <Zap
@@ -452,6 +402,48 @@ async function executeConfirmed() {
           class="w-3 h-3 text-[var(--warning)] flex-shrink-0"
           :title="store.clusterInfo?.virtualisation?.summary"
         />
+      </div>
+
+      <div
+        class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors text-sm"
+        :class="store.selectedNode === '__k9s__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
+        @click="store.selectNode('__k9s__')"
+      >
+        <Compass class="w-4 h-4 flex-shrink-0" />
+        <span class="truncate">k9s</span>
+      </div>
+
+      <hr class="my-2 border-[var(--border)]" />
+
+      <!-- Cluster-scoped region: everything below follows the active
+           context. The left-edge stripe uses the active cluster's chosen
+           colour so dev/staging/prod stay visually distinct at a
+           glance — a weak guard against fat-fingering a destructive
+           action on the wrong environment. -->
+      <div
+        class="pl-1 -ml-0.5 transition-colors"
+        :style="store.activeClusterColor ? { borderLeft: `3px solid ${store.activeClusterColor}` } : { borderLeft: '3px solid transparent' }"
+      >
+
+      <div class="text-[10px] uppercase tracking-wide text-[var(--muted)] px-1 pb-1">
+        Active Cluster
+      </div>
+
+      <ClusterSwitcher />
+
+      <div
+        class="mt-1 flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors hover:bg-[var(--bg-hover)]"
+        @contextmenu.prevent="openHostContextMenu"
+      >
+        <button
+          class="w-4 h-4 flex items-center justify-center"
+          @click.stop="expanded = !expanded"
+        >
+          <ChevronDown v-if="expanded" class="w-3 h-3" />
+          <ChevronRight v-else class="w-3 h-3" />
+        </button>
+        <Monitor class="w-4 h-4 text-[var(--accent)]" />
+        <span class="text-sm font-medium truncate flex-1">VMs</span>
         <button
           v-if="store.vms.length > 0"
           class="w-4 h-4 flex items-center justify-center transition-colors"
@@ -517,17 +509,6 @@ async function executeConfirmed() {
       </div>
 
       <div v-show="expanded" class="ml-4">
-        <!-- k9s — cluster-scoped utility; sits in the tree alongside VMs
-             because it operates on the active context, same as they do. -->
-        <div
-          class="flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors text-sm"
-          :class="store.selectedNode === '__k9s__' ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'"
-          @click="store.selectNode('__k9s__')"
-        >
-          <Compass class="w-3.5 h-3.5 flex-shrink-0" />
-          <span class="truncate">k9s</span>
-        </div>
-
         <!-- New Group button -->
         <button
           class="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors w-full"

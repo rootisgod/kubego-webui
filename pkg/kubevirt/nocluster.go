@@ -22,16 +22,16 @@ var ErrNoActiveCluster = errors.New("no active cluster: create one via the clust
 // panel still render.
 type noClusterClient struct{}
 
-func (noClusterClient) Namespace() string                      { return "default" }
-func (noClusterClient) ProbeKubeVirt(context.Context) error    { return nil }
-func (noClusterClient) ListVMs() ([]VMInfo, error)             { return nil, ErrNoActiveCluster }
-func (noClusterClient) GetVMInfo(string) (VMInfo, error)       { return VMInfo{}, ErrNoActiveCluster }
-func (noClusterClient) StartVM(string) error                   { return ErrNoActiveCluster }
-func (noClusterClient) StopVM(string) error                    { return ErrNoActiveCluster }
-func (noClusterClient) SuspendVM(string) error                 { return ErrNoActiveCluster }
-func (noClusterClient) DeleteVM(string, bool) error            { return ErrNoActiveCluster }
-func (noClusterClient) StartAll() error                        { return ErrNoActiveCluster }
-func (noClusterClient) StopAll() error                         { return ErrNoActiveCluster }
+func (noClusterClient) Namespace() string                   { return "default" }
+func (noClusterClient) ProbeKubeVirt(context.Context) error { return nil }
+func (noClusterClient) ListVMs() ([]VMInfo, error)          { return nil, ErrNoActiveCluster }
+func (noClusterClient) GetVMInfo(string) (VMInfo, error)    { return VMInfo{}, ErrNoActiveCluster }
+func (noClusterClient) StartVM(string) error                { return ErrNoActiveCluster }
+func (noClusterClient) StopVM(string) error                 { return ErrNoActiveCluster }
+func (noClusterClient) SuspendVM(string) error              { return ErrNoActiveCluster }
+func (noClusterClient) DeleteVM(string, bool) error         { return ErrNoActiveCluster }
+func (noClusterClient) StartAll() error                     { return ErrNoActiveCluster }
+func (noClusterClient) StopAll() error                      { return ErrNoActiveCluster }
 func (noClusterClient) LaunchVMFromImage(VMImageLaunchRequest) (string, error) {
 	return "", ErrNoActiveCluster
 }
@@ -47,26 +47,26 @@ func (noClusterClient) ExecInVMStreaming(context.Context, string, []string, func
 	return "", ErrNoActiveCluster
 }
 
-func (noClusterClient) GetVMConfig(string) (VMConfig, error)   { return VMConfig{}, ErrNoActiveCluster }
-func (noClusterClient) SetVMCPUs(string, int) error            { return ErrNoActiveCluster }
-func (noClusterClient) SetVMMemory(string, int) error          { return ErrNoActiveCluster }
-func (noClusterClient) SetVMDisk(string, int) error            { return ErrNoActiveCluster }
-func (noClusterClient) GetRawInfo(string) (string, error)      { return "", ErrNoActiveCluster }
+func (noClusterClient) GetVMConfig(string) (VMConfig, error) { return VMConfig{}, ErrNoActiveCluster }
+func (noClusterClient) SetVMCPUs(string, int) error          { return ErrNoActiveCluster }
+func (noClusterClient) SetVMMemory(string, int) error        { return ErrNoActiveCluster }
+func (noClusterClient) SetVMDisk(string, int) error          { return ErrNoActiveCluster }
+func (noClusterClient) GetRawInfo(string) (string, error)    { return "", ErrNoActiveCluster }
 func (noClusterClient) GetCloudInitStatus(string) (CloudInitStatus, error) {
 	return CloudInitStatus{}, ErrNoActiveCluster
 }
 
-func (noClusterClient) ListSnapshots(string) ([]SnapshotInfo, error)   { return nil, ErrNoActiveCluster }
-func (noClusterClient) CreateSnapshot(string, string, string) error    { return ErrNoActiveCluster }
-func (noClusterClient) RestoreSnapshot(string, string) error           { return ErrNoActiveCluster }
-func (noClusterClient) DeleteSnapshot(string, string) error            { return ErrNoActiveCluster }
+func (noClusterClient) ListSnapshots(string) ([]SnapshotInfo, error) { return nil, ErrNoActiveCluster }
+func (noClusterClient) CreateSnapshot(string, string, string) error  { return ErrNoActiveCluster }
+func (noClusterClient) RestoreSnapshot(string, string) error         { return ErrNoActiveCluster }
+func (noClusterClient) DeleteSnapshot(string, string) error          { return ErrNoActiveCluster }
 
-func (noClusterClient) ListDisks(string) ([]DiskInfo, error)           { return nil, ErrNoActiveCluster }
-func (noClusterClient) AttachDisk(string, string, string) error        { return ErrNoActiveCluster }
-func (noClusterClient) DetachDisk(string, string) error                { return ErrNoActiveCluster }
+func (noClusterClient) ListDisks(string) ([]DiskInfo, error)    { return nil, ErrNoActiveCluster }
+func (noClusterClient) AttachDisk(string, string, string) error { return ErrNoActiveCluster }
+func (noClusterClient) DetachDisk(string, string) error         { return ErrNoActiveCluster }
 
-func (noClusterClient) ListNetworks() ([]NetworkInfo, error)           { return nil, ErrNoActiveCluster }
-func (noClusterClient) FindImages() ([]ImageInfo, error)               { return nil, ErrNoActiveCluster }
+func (noClusterClient) ListNetworks() ([]NetworkInfo, error) { return nil, ErrNoActiveCluster }
+func (noClusterClient) FindImages() ([]ImageInfo, error)     { return nil, ErrNoActiveCluster }
 
 // Cloud-init templates are filesystem-backed and cluster-agnostic, so
 // honour them even without an active cluster.
@@ -124,6 +124,9 @@ func (noClusterClient) LaunchWindowsVM(WindowsLaunchRequest) (string, error) {
 }
 func (noClusterClient) LaunchLinuxISOVM(LinuxISOLaunchRequest) (string, error) {
 	return "", ErrNoActiveCluster
+}
+func (noClusterClient) ApplyManifest(context.Context, string) ([]AppliedResource, error) {
+	return nil, ErrNoActiveCluster
 }
 
 func (noClusterClient) ClusterResources() (ClusterResources, error) {

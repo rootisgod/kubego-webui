@@ -34,6 +34,7 @@ type IngressControllerStatus struct {
 	Replicas  int32  `json:"replicas"`
 	Version   string `json:"version,omitempty"`
 	HostIP    string `json:"host_ip,omitempty"` // suggested node IP for nip.io hostnames
+	HTTPPort  int    `json:"http_port,omitempty"`
 }
 
 // IngressInfo is one VM-port → Ingress exposure as the UI sees it.
@@ -65,6 +66,7 @@ func (c *kubevirtClient) IngressControllerStatus() (IngressControllerStatus, err
 		Installed: true,
 		Replicas:  dep.Status.AvailableReplicas,
 		HostIP:    firstNodeIP(ctx, c),
+		HTTPPort:  firstNodeHTTPPort(ctx, c),
 	}
 	status.Ready = dep.Status.AvailableReplicas > 0 && dep.Status.UnavailableReplicas == 0
 	// The container image tag is the pragmatic "version" signal —
@@ -84,32 +86,62 @@ func (c *kubevirtClient) IngressControllerStatus() (IngressControllerStatus, err
 // in nip.io hostnames. Callers accept an empty string (they render a
 // "<ip>" placeholder rather than 500ing).
 func firstNodeIP(ctx context.Context, c *kubevirtClient) string {
+	n := firstIngressNode(ctx, c)
+	if n == nil {
+		return ""
+	}
+	for _, a := range n.Status.Addresses {
+		if a.Type == corev1.NodeInternalIP && a.Address != "" {
+			return a.Address
+		}
+	}
+	return ""
+}
+
+func firstNodeHTTPPort(ctx context.Context, c *kubevirtClient) int {
+	n := firstIngressNode(ctx, c)
+	if n == nil {
+		return 0
+	}
+	if raw := n.Labels["kubego.io/ingress-http-port"]; raw != "" {
+		var port int
+		if _, err := fmt.Sscanf(raw, "%d", &port); err == nil && port > 0 && port <= 65535 {
+			return port
+		}
+	}
+	return 80
+}
+
+func firstIngressNode(ctx context.Context, c *kubevirtClient) *corev1.Node {
 	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return ""
+		return nil
 	}
 	// Prefer control-plane; fall back to any node.
-	pick := func(filter func(corev1.Node) bool) string {
-		for _, n := range nodes.Items {
-			if !filter(n) {
+	pick := func(filter func(corev1.Node) bool) *corev1.Node {
+		for i := range nodes.Items {
+			if !filter(nodes.Items[i]) {
 				continue
 			}
-			for _, a := range n.Status.Addresses {
-				if a.Type == corev1.NodeInternalIP && a.Address != "" {
-					return a.Address
-				}
-			}
+			return &nodes.Items[i]
 		}
-		return ""
+		return nil
 	}
-	if ip := pick(func(n corev1.Node) bool {
+	if n := pick(func(n corev1.Node) bool {
 		_, ok1 := n.Labels["node-role.kubernetes.io/control-plane"]
 		_, ok2 := n.Labels["node-role.kubernetes.io/master"]
 		return ok1 || ok2
-	}); ip != "" {
-		return ip
+	}); n != nil {
+		return n
 	}
 	return pick(func(n corev1.Node) bool { return true })
+}
+
+func ingressURL(hostname string, httpPort int) string {
+	if httpPort <= 0 || httpPort == 80 {
+		return "http://" + hostname + "/"
+	}
+	return fmt.Sprintf("http://%s:%d/", hostname, httpPort)
 }
 
 // ListVMIngresses returns the KubeGo-managed exposures for a VM. We
@@ -127,6 +159,7 @@ func (c *kubevirtClient) ListVMIngresses(vmName string) ([]IngressInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list ingresses: %w", err)
 	}
+	httpPort := firstNodeHTTPPort(ctx, c)
 	out := make([]IngressInfo, 0, len(ings.Items))
 	for i := range ings.Items {
 		ing := &ings.Items[i]
@@ -140,7 +173,7 @@ func (c *kubevirtClient) ListVMIngresses(vmName string) ([]IngressInfo, error) {
 		if len(ing.Spec.Rules) > 0 {
 			info.Hostname = ing.Spec.Rules[0].Host
 			if info.Hostname != "" {
-				info.URL = "http://" + info.Hostname + "/"
+				info.URL = ingressURL(info.Hostname, httpPort)
 			}
 			if ing.Spec.Rules[0].HTTP != nil && len(ing.Spec.Rules[0].HTTP.Paths) > 0 {
 				if p := ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service; p != nil {
@@ -168,6 +201,7 @@ func (c *kubevirtClient) ExposeVMPort(vmName string, port int) (IngressInfo, err
 	defer cancel()
 
 	hostIP := firstNodeIP(ctx, c)
+	httpPort := firstNodeHTTPPort(ctx, c)
 	if hostIP == "" {
 		// The ingress record still resolves in some environments where
 		// users override DNS; fall back to "localhost" which works for
@@ -193,8 +227,8 @@ func (c *kubevirtClient) ExposeVMPort(vmName string, port int) (IngressInfo, err
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"kubevirt.io":          "virt-launcher",
-				"vm.kubevirt.io/name":  vmName,
+				"kubevirt.io":         "virt-launcher",
+				"vm.kubevirt.io/name": vmName,
 			},
 			Ports: []corev1.ServicePort{{
 				Name:       "http",
@@ -253,7 +287,7 @@ func (c *kubevirtClient) ExposeVMPort(vmName string, port int) (IngressInfo, err
 		VM:         vmName,
 		RemotePort: port,
 		Hostname:   hostname,
-		URL:        "http://" + hostname + "/",
+		URL:        ingressURL(hostname, httpPort),
 		ClassName:  className,
 	}, nil
 }

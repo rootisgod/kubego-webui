@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,7 +134,10 @@ type clusterSSEEvent struct {
 }
 
 type kindCreateRequest struct {
-	Name string `json:"name"`
+	Name         string `json:"name"`
+	Ingress      bool   `json:"ingress"`
+	IngressHTTP  int    `json:"ingress_http"`
+	IngressHTTPS int    `json:"ingress_https"`
 }
 
 func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +163,32 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name must be lowercase alphanumeric with dashes (2-32 chars)")
 		return
 	}
+	if req.Ingress {
+		if req.IngressHTTP == 0 {
+			req.IngressHTTP = 80
+		}
+		if req.IngressHTTPS == 0 {
+			req.IngressHTTPS = 443
+		}
+		if err := validateHostPort(req.IngressHTTP); err != nil {
+			writeError(w, http.StatusBadRequest, "HTTP ingress port: "+err.Error())
+			return
+		}
+		if err := validateHostPort(req.IngressHTTPS); err != nil {
+			writeError(w, http.StatusBadRequest, "HTTPS ingress port: "+err.Error())
+			return
+		}
+		if req.IngressHTTP == req.IngressHTTPS {
+			writeError(w, http.StatusBadRequest, "HTTP and HTTPS ingress ports must be different")
+			return
+		}
+		for _, p := range []int{req.IngressHTTP, req.IngressHTTPS} {
+			if !hostPortAvailable(p) {
+				writeError(w, http.StatusConflict, fmt.Sprintf("host port %d is already in use", p))
+				return
+			}
+		}
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -167,12 +198,10 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 	setSSEHeaders(w, flusher)
 
 	// Step 1: `kind create cluster`. Every KubeGo cluster gets a generated
-	// KIND config so we control the baseline: ingress-ready label on the
-	// control-plane node and extraPortMappings for 80/443 (required for
-	// the one-click ingress-nginx install in Tier 1-B), plus an optional
-	// /dev/kvm bind-mount when the host has hardware virtualisation.
+	// KIND config so we can add optional ingress host-port mappings plus
+	// an optional /dev/kvm bind-mount when the host has hardware virtualisation.
 	kvmPassthrough := hostHasKVM()
-	cfgPath, err := writeKindConfig(req.Name, kvmPassthrough)
+	cfgPath, err := writeKindConfig(req.Name, kvmPassthrough, req.Ingress, req.IngressHTTP, req.IngressHTTPS)
 	if err != nil {
 		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: "write kind config: " + err.Error()})
 		return
@@ -183,7 +212,11 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 	} else {
 		streamLine(w, flusher, "==> Host has no /dev/kvm — cluster will use software emulation (slow)")
 	}
-	streamLine(w, flusher, "==> Binding host ports 80/443 into the KinD node for ingress (free those ports if the command fails)")
+	if req.Ingress {
+		streamLine(w, flusher, fmt.Sprintf("==> Binding host ports %d/%d into the KinD node for ingress", req.IngressHTTP, req.IngressHTTPS))
+	} else {
+		streamLine(w, flusher, "==> Ingress host port binding disabled")
+	}
 	kindArgs := []string{"create", "cluster", "--config", cfgPath}
 	if kcfg := s.clusters.KubeconfigPath(); kcfg != "" {
 		kindArgs = append(kindArgs, "--kubeconfig", kcfg)
@@ -202,7 +235,7 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2..N: install KubeVirt + CDI into the new context. Skip the
 	// useEmulation patch when /dev/kvm is present in the node.
-	if err := s.installKubeVirtIntoKind(r.Context(), w, flusher, contextName, !kvmPassthrough); err != nil {
+	if err := s.installKubeVirtIntoKind(r.Context(), w, flusher, contextName, req.Name, !kvmPassthrough); err != nil {
 		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: err.Error()})
 		return
 	}
@@ -268,7 +301,7 @@ func (s *Server) handleKindDelete(w http.ResponseWriter, r *http.Request) {
 // KubeVirt, optional useEmulation patch (only when the node lacks
 // /dev/kvm), operator + CR for CDI, then waits for both to reach
 // Available. Streams every subcommand's output as SSE output events.
-func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kctx string, useEmulation bool) error {
+func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kctx, kindClusterName string, useEmulation bool) error {
 	streamPhase(w, flusher, "Resolving KubeVirt + CDI release versions")
 	kvVer, err := resolveKubeVirtVersion(ctx)
 	if err != nil {
@@ -280,6 +313,10 @@ func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWri
 		return fmt.Errorf("resolve cdi version: %w", err)
 	}
 	streamLine(w, flusher, "  CDI "+cdiVer)
+
+	if err := preloadKindInstallImages(ctx, w, flusher, kindClusterName, installImages(kvVer, cdiVer)); err != nil {
+		return err
+	}
 
 	type installStep struct {
 		label string
@@ -339,6 +376,71 @@ func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWri
 	return nil
 }
 
+func installImages(kvVer, cdiVer string) []string {
+	return uniqueStrings([]string{
+		"quay.io/kubevirt/virt-operator:" + kvVer,
+		"quay.io/kubevirt/virt-api:" + kvVer,
+		"quay.io/kubevirt/virt-controller:" + kvVer,
+		"quay.io/kubevirt/virt-handler:" + kvVer,
+		"quay.io/kubevirt/virt-launcher:" + kvVer,
+		"quay.io/kubevirt/cdi-operator:" + cdiVer,
+		"quay.io/kubevirt/cdi-controller:" + cdiVer,
+		"quay.io/kubevirt/cdi-apiserver:" + cdiVer,
+		"quay.io/kubevirt/cdi-uploadproxy:" + cdiVer,
+		"quay.io/kubevirt/cdi-uploadserver:" + cdiVer,
+		"quay.io/kubevirt/cdi-importer:" + cdiVer,
+		"quay.io/kubevirt/cdi-cloner:" + cdiVer,
+	})
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kindClusterName string, images []string) error {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("docker CLI not found on PATH (required for local KubeVirt/CDI image cache)")
+	}
+	if kindClusterName == "" {
+		return fmt.Errorf("kind cluster name is required for image preload")
+	}
+
+	streamPhase(w, flusher, "Preparing local KubeVirt/CDI image cache")
+	for _, image := range images {
+		if dockerImageExists(ctx, image) {
+			streamLine(w, flusher, "  cached "+image)
+			continue
+		}
+		streamPhase(w, flusher, "Pulling "+image)
+		if err := streamCommand(ctx, w, flusher, "docker", "pull", image); err != nil {
+			return fmt.Errorf("pull %s: %w", image, err)
+		}
+	}
+
+	streamPhase(w, flusher, "Loading KubeVirt/CDI images into KinD")
+	for _, image := range images {
+		streamLine(w, flusher, "  loading "+image)
+		if err := streamCommand(ctx, w, flusher, "kind", "load", "docker-image", "--name", kindClusterName, image); err != nil {
+			return fmt.Errorf("load %s into kind: %w", image, err)
+		}
+	}
+	return nil
+}
+
+func dockerImageExists(ctx context.Context, image string) bool {
+	cmd := exec.CommandContext(ctx, "docker", "image", "inspect", image)
+	return cmd.Run() == nil
+}
+
 // hostHasKVM reports whether /dev/kvm exists on the host the server is
 // running on. Used to decide whether the UI-created KinD node gets a
 // bind-mounted /dev/kvm for hardware acceleration.
@@ -348,14 +450,20 @@ func hostHasKVM() bool {
 }
 
 // writeKindConfig writes a KIND v1alpha4 cluster config with the KubeGo
-// baseline: an `ingress-ready=true` label on the control-plane node and
-// 80/443 host port mappings so ingress-nginx works via the KinD preset.
+// baseline. When ingress is enabled, it labels the control-plane node for
+// the ingress-nginx KinD preset and maps host ports to node ports 80/443.
 // When kvmPassthrough is true, `/dev/kvm` is bind-mounted into the node
 // for hardware-accelerated VMs. Caller must os.Remove the returned path.
-func writeKindConfig(name string, kvmPassthrough bool) (string, error) {
+func writeKindConfig(name string, kvmPassthrough, ingress bool, ingressHTTP, ingressHTTPS int) (string, error) {
 	f, err := os.CreateTemp("", "kubego-kind-*.yaml")
 	if err != nil {
 		return "", err
+	}
+	if ingressHTTP == 0 {
+		ingressHTTP = 80
+	}
+	if ingressHTTPS == 0 {
+		ingressHTTPS = 443
 	}
 	var extraMounts string
 	if kvmPassthrough {
@@ -364,27 +472,32 @@ func writeKindConfig(name string, kvmPassthrough bool) (string, error) {
         containerPath: /dev/kvm
 `
 	}
-	// The kubeadmConfigPatches form applies node-labels at kubelet start,
-	// which the ingress-nginx KinD manifest's nodeSelector depends on.
+	var ingressConfig string
+	if ingress {
+		// The kubeadmConfigPatches form applies node-labels at kubelet start,
+		// which the ingress-nginx KinD manifest's nodeSelector depends on.
+		labels := fmt.Sprintf("ingress-ready=true,kubego.io/ingress-http-port=%d,kubego.io/ingress-https-port=%d", ingressHTTP, ingressHTTPS)
+		ingressConfig = fmt.Sprintf(`    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "%s"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: %d
+        protocol: TCP
+      - containerPort: 443
+        hostPort: %d
+        protocol: TCP
+`, labels, ingressHTTP, ingressHTTPS)
+	}
 	yaml := fmt.Sprintf(`kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: %s
 nodes:
   - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
-    extraPortMappings:
-      - containerPort: 80
-        hostPort: 80
-        protocol: TCP
-      - containerPort: 443
-        hostPort: 443
-        protocol: TCP
-%s`, name, extraMounts)
+%s%s`, name, ingressConfig, extraMounts)
 	if _, werr := f.WriteString(yaml); werr != nil {
 		f.Close()
 		os.Remove(f.Name())
@@ -395,6 +508,57 @@ nodes:
 		return "", cerr
 	}
 	return f.Name(), nil
+}
+
+type hostPortStatus struct {
+	Port      int  `json:"port"`
+	Available bool `json:"available"`
+}
+
+func (s *Server) handleCheckHostPorts(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("ports")
+	if strings.TrimSpace(raw) == "" {
+		writeError(w, http.StatusBadRequest, "ports query parameter is required")
+		return
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]hostPortStatus, 0, len(parts))
+	for _, part := range parts {
+		p, err := parsePort(strings.TrimSpace(part))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		out = append(out, hostPortStatus{Port: p, Available: hostPortAvailable(p)})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ports": out})
+}
+
+func parsePort(raw string) (int, error) {
+	p, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port %q", raw)
+	}
+	if err := validateHostPort(p); err != nil {
+		return 0, err
+	}
+	return p, nil
+}
+
+func validateHostPort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("must be between 1 and 65535")
+	}
+	return nil
+}
+
+func hostPortAvailable(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
 }
 
 // resolveKubeVirtVersion honours $KUBEVIRT_VERSION for parity with
