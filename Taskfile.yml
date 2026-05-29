@@ -156,6 +156,111 @@ tasks:
     cmds:
       - ./scripts/smoke-test.sh
 
+  # --- Systemd service (Linux) ---
+
+  install-binary:
+    desc: Copy the built kubego binary to /usr/local/bin/kubego (run with sudo)
+    cmds:
+      - |
+        if [ -f dist/kubego-linux-amd64 ]; then
+          SRC=dist/kubego-linux-amd64
+        elif [ -f kubego ]; then
+          SRC=kubego
+        else
+          echo "Error: no kubego binary found."
+          echo "Build one first with 'task build' (native) or 'task build-all' (cross-compile)."
+          exit 1
+        fi
+        echo "Installing $SRC -> /usr/local/bin/kubego"
+        install -m 0755 "$SRC" /usr/local/bin/kubego
+
+  service-install:
+    desc: Install kubego as a systemd service — copies the binary, writes the unit, starts it (run with sudo)
+    deps: [install-binary]
+    cmds:
+      - |
+        if [ ! -f /root/.kube/config ]; then
+          echo "Warning: /root/.kube/config not found."
+          echo "The service runs as root and resolves its cluster from in-cluster"
+          echo "config, then \$KUBECONFIG, then /root/.kube/config. Make sure one is"
+          echo "available, or edit /etc/systemd/system/kubego.service to add"
+          echo "  ExecStart=/usr/local/bin/kubego --kubeconfig /path/to/config"
+        fi
+      - |
+        printf '%s\n' \
+          '[Unit]' \
+          'Description=KubeGo Web - Kubernetes / KubeVirt Management UI' \
+          'After=network-online.target' \
+          'Wants=network-online.target' \
+          '' \
+          '[Service]' \
+          'Type=simple' \
+          'Environment=HOME=/root' \
+          'ExecStart=/usr/local/bin/kubego' \
+          'Restart=on-failure' \
+          'RestartSec=5' \
+          '' \
+          '[Install]' \
+          'WantedBy=multi-user.target' \
+          > /etc/systemd/system/kubego.service
+      - systemctl daemon-reload
+      - systemctl enable kubego
+      - systemctl start kubego
+      - echo "kubego service installed and started (listening on :8081 by default)"
+
+  service-start:
+    desc: Start the kubego service (run with sudo)
+    cmds:
+      - systemctl start kubego
+      - echo "kubego service started"
+
+  service-stop:
+    desc: Stop the kubego service (run with sudo)
+    cmds:
+      - systemctl stop kubego
+      - echo "kubego service stopped"
+
+  service-restart:
+    desc: Restart the kubego service (run with sudo)
+    cmds:
+      - systemctl restart kubego
+      - echo "kubego service restarted"
+
+  service-status:
+    desc: Show kubego service status
+    cmds:
+      - systemctl status kubego
+
+  service-logs:
+    desc: Follow kubego service logs
+    cmds:
+      - journalctl -u kubego -f
+
+  service-remove:
+    desc: Remove the kubego systemd service (run with sudo)
+    cmds:
+      - systemctl stop kubego || true
+      - systemctl disable kubego || true
+      - rm -f /etc/systemd/system/kubego.service
+      - rm -f /usr/local/bin/kubego
+      - systemctl daemon-reload
+      - echo "kubego service removed"
+
+  update-binary-linux:
+    desc: Download latest release from GitHub, stop service, replace binary, start service (run with sudo)
+    cmds:
+      - echo "Downloading latest release..."
+      - curl -sL "https://github.com/rootisgod/kubego-webui/releases/latest/download/kubego-linux-amd64" -o /tmp/kubego-linux-amd64
+      - chmod +x /tmp/kubego-linux-amd64
+      - echo "Stopping service..."
+      - systemctl stop kubego
+      - cp /tmp/kubego-linux-amd64 /usr/local/bin/kubego
+      - rm /tmp/kubego-linux-amd64
+      - echo "Starting service..."
+      - systemctl start kubego
+      - echo "Update complete. New version:"
+      - /usr/local/bin/kubego --version || true
+
   # --- Clean ---
 
   clean:
