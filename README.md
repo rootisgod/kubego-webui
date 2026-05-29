@@ -24,6 +24,10 @@ The screenshots below use demo data so they can be published without exposing a 
 
 *Quick create modal for launching a VM from an image with name, image, and size preset fields.*
 
+![KubeGo embedded k9s terminal](docs/images/kubego-k9s-terminal.png)
+
+*Embedded k9s running inside the KubeGo web UI, with a server-side PTY proxied into an xterm.js panel for the active cluster.*
+
 ## Bare-minimum quickstart on a new machine
 
 This is the shortest path from a clean laptop to "binary running against a local KinD cluster with KubeVirt installed". Four steps; the third one takes 5–10 minutes on first run and the rest are seconds.
