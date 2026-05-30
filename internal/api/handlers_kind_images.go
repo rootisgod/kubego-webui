@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+const (
+	ociImageIndexMediaType  = "application/vnd.oci.image.index.v1+json"
+	dockerManifestListMedia = "application/vnd.docker.distribution.manifest.list.v2+json"
+)
+
 type kindDockerImageStatus struct {
 	Reference    string   `json:"reference"`
 	ID           string   `json:"id,omitempty"`
@@ -91,7 +96,7 @@ func (s *Server) handleKindImageLoad(w http.ResponseWriter, r *http.Request) {
 	}
 	setSSEHeaders(w, flusher)
 	streamPhase(w, flusher, "Loading "+image+" into KinD cluster "+clusterName)
-	if err := streamCommand(r.Context(), w, flusher, "kind", "load", "docker-image", "--name", clusterName, image); err != nil {
+	if err := loadDockerImageIntoKind(r.Context(), w, flusher, clusterName, image); err != nil {
 		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: err.Error()})
 		return
 	}
@@ -130,6 +135,153 @@ func imageReferenceCandidates(ref string) []string {
 		out = append(out, "docker.io/"+repo+":"+tag)
 	}
 	return out
+}
+
+func loadDockerImageIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, clusterName, image string) error {
+	corrected, changed, err := correctDockerImageForKindNode(ctx, w, flusher, clusterName, image)
+	if err != nil {
+		streamLine(w, flusher, "  warning: image auto-correct skipped: "+err.Error())
+	}
+	if changed {
+		streamLine(w, flusher, "  using single-platform local image "+corrected)
+	}
+	return streamCommand(ctx, w, flusher, "kind", "load", "docker-image", "--name", clusterName, corrected)
+}
+
+func correctDockerImageForKindNode(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, clusterName, image string) (string, bool, error) {
+	mediaType, err := localDockerImageMediaType(ctx, image)
+	if err != nil {
+		return image, false, err
+	}
+	if mediaType != ociImageIndexMediaType && mediaType != dockerManifestListMedia {
+		return image, false, nil
+	}
+
+	platform, err := kindNodePlatform(ctx, clusterName)
+	if err != nil {
+		return image, false, err
+	}
+	digest, err := imageManifestDigestForPlatform(ctx, image, platform.os, platform.arch, platform.variant)
+	if err != nil {
+		return image, false, err
+	}
+
+	repo := dockerImageRepository(image)
+	if repo == "" {
+		return image, false, fmt.Errorf("could not derive repository from %q", image)
+	}
+	childRef := repo + "@" + digest
+	streamLine(w, flusher, fmt.Sprintf("  %s is a multi-platform index; selecting %s for %s/%s", image, digest, platform.os, platform.arch))
+	if err := exec.CommandContext(ctx, "docker", "pull", childRef).Run(); err != nil {
+		return image, false, fmt.Errorf("pull platform manifest %s: %w", childRef, err)
+	}
+	if err := exec.CommandContext(ctx, "docker", "tag", childRef, image).Run(); err != nil {
+		return image, false, fmt.Errorf("retag %s as %s: %w", childRef, image, err)
+	}
+	return image, true, nil
+}
+
+type dockerPlatform struct {
+	os      string
+	arch    string
+	variant string
+}
+
+func localDockerImageMediaType(ctx context.Context, image string) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "image", "inspect", image).Output()
+	if err != nil {
+		return "", fmt.Errorf("inspect local image %s: %w", image, err)
+	}
+	var body []struct {
+		Descriptor struct {
+			MediaType string `json:"mediaType"`
+		} `json:"Descriptor"`
+	}
+	if err := json.Unmarshal(out, &body); err != nil {
+		return "", fmt.Errorf("parse docker image inspect: %w", err)
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("image %s not found", image)
+	}
+	return body[0].Descriptor.MediaType, nil
+}
+
+func kindNodePlatform(ctx context.Context, clusterName string) (dockerPlatform, error) {
+	node := clusterName + "-control-plane"
+	out, err := exec.CommandContext(ctx, "docker", "exec", node, "uname", "-m").Output()
+	if err != nil {
+		return dockerPlatform{}, fmt.Errorf("detect KinD node architecture: %w", err)
+	}
+	arch, variant, err := dockerArchFromUname(strings.TrimSpace(string(out)))
+	if err != nil {
+		return dockerPlatform{}, err
+	}
+	return dockerPlatform{os: "linux", arch: arch, variant: variant}, nil
+}
+
+func dockerArchFromUname(uname string) (arch, variant string, err error) {
+	switch uname {
+	case "x86_64", "amd64":
+		return "amd64", "", nil
+	case "aarch64", "arm64":
+		return "arm64", "v8", nil
+	case "s390x":
+		return "s390x", "", nil
+	case "ppc64le":
+		return "ppc64le", "", nil
+	case "armv7l":
+		return "arm", "v7", nil
+	case "armv6l":
+		return "arm", "v6", nil
+	default:
+		return "", "", fmt.Errorf("unsupported KinD node architecture %q", uname)
+	}
+}
+
+func imageManifestDigestForPlatform(ctx context.Context, image, osName, arch, variant string) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "manifest", "inspect", image).Output()
+	if err != nil {
+		return "", fmt.Errorf("inspect manifest %s: %w", image, err)
+	}
+	var body struct {
+		Manifests []struct {
+			MediaType string `json:"mediaType"`
+			Digest    string `json:"digest"`
+			Platform  struct {
+				Architecture string `json:"architecture"`
+				OS           string `json:"os"`
+				Variant      string `json:"variant"`
+			} `json:"platform"`
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(out, &body); err != nil {
+		return "", fmt.Errorf("parse docker manifest inspect: %w", err)
+	}
+	for _, manifest := range body.Manifests {
+		if manifest.Platform.OS != osName || manifest.Platform.Architecture != arch {
+			continue
+		}
+		if variant != "" && manifest.Platform.Variant != "" && manifest.Platform.Variant != variant {
+			continue
+		}
+		if manifest.Digest == "" {
+			return "", fmt.Errorf("manifest for %s/%s has no digest", osName, arch)
+		}
+		return manifest.Digest, nil
+	}
+	return "", fmt.Errorf("no manifest found for %s/%s in %s", osName, arch, image)
+}
+
+func dockerImageRepository(ref string) string {
+	if repo, _, ok := strings.Cut(ref, "@"); ok {
+		return repo
+	}
+	slash := strings.LastIndex(ref, "/")
+	colon := strings.LastIndex(ref, ":")
+	if colon > slash {
+		return ref[:colon]
+	}
+	return ref
 }
 
 func listDockerImages(ctx context.Context) ([]kindDockerImageStatus, error) {

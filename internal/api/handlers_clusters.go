@@ -439,7 +439,7 @@ func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flushe
 			continue
 		}
 		streamLine(w, flusher, "  loading "+image)
-		if err := streamCommand(ctx, w, flusher, "kind", "load", "docker-image", "--name", kindClusterName, image); err != nil {
+		if err := loadDockerImageIntoKind(ctx, w, flusher, kindClusterName, image); err != nil {
 			streamLine(w, flusher, fmt.Sprintf("  warning: could not preload %s into KinD: %v", image, err))
 			streamLine(w, flusher, "  continuing; Kubernetes will pull the image when the manifest starts")
 		}
