@@ -408,7 +408,8 @@ func uniqueStrings(values []string) []string {
 
 func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kindClusterName string, images []string) error {
 	if _, err := exec.LookPath("docker"); err != nil {
-		return fmt.Errorf("docker CLI not found on PATH (required for local KubeVirt/CDI image cache)")
+		streamLine(w, flusher, "  warning: docker CLI not found; skipping local image cache preload")
+		return nil
 	}
 	if kindClusterName == "" {
 		return fmt.Errorf("kind cluster name is required for image preload")
@@ -422,15 +423,20 @@ func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flushe
 		}
 		streamPhase(w, flusher, "Pulling "+image)
 		if err := streamCommand(ctx, w, flusher, "docker", "pull", image); err != nil {
-			return fmt.Errorf("pull %s: %w", image, err)
+			streamLine(w, flusher, fmt.Sprintf("  warning: could not cache %s locally: %v", image, err))
 		}
 	}
 
 	streamPhase(w, flusher, "Loading KubeVirt/CDI images into KinD")
 	for _, image := range images {
+		if !dockerImageExists(ctx, image) {
+			streamLine(w, flusher, "  skipping "+image+" (not present in local Docker cache)")
+			continue
+		}
 		streamLine(w, flusher, "  loading "+image)
 		if err := streamCommand(ctx, w, flusher, "kind", "load", "docker-image", "--name", kindClusterName, image); err != nil {
-			return fmt.Errorf("load %s into kind: %w", image, err)
+			streamLine(w, flusher, fmt.Sprintf("  warning: could not preload %s into KinD: %v", image, err))
+			streamLine(w, flusher, "  continuing; Kubernetes will pull the image when the manifest starts")
 		}
 	}
 	return nil
