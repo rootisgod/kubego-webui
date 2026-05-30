@@ -162,13 +162,19 @@ tasks:
     desc: Copy the built kubego binary to /usr/local/bin/kubego (run with sudo)
     cmds:
       - |
-        if [ -f dist/kubego-linux-amd64 ]; then
-          SRC=dist/kubego-linux-amd64
+        if [ -n "{{default "" .KUBEGO_INSTALL_SRC}}" ]; then
+          SRC="{{default "" .KUBEGO_INSTALL_SRC}}"
         elif [ -f kubego ]; then
           SRC=kubego
+        elif [ -f dist/kubego-linux-amd64 ]; then
+          SRC=dist/kubego-linux-amd64
         else
           echo "Error: no kubego binary found."
           echo "Build one first with 'task build' (native) or 'task build-all' (cross-compile)."
+          exit 1
+        fi
+        if [ ! -f "$SRC" ]; then
+          echo "Error: install source not found: $SRC"
           exit 1
         fi
         echo "Installing $SRC -> /usr/local/bin/kubego"
@@ -231,6 +237,8 @@ tasks:
     cmds:
       - task: build
       - task: install-binary
+        vars:
+          KUBEGO_INSTALL_SRC: kubego
       - systemctl restart kubego
       - echo "kubego built, installed, and restarted"
 
