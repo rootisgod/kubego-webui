@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { listVMs, listLaunches, listGroups, listProfiles, dismissLaunch, getClusterResources, getClusterInfo, listClusters } from '../api/client.js'
+import { listVMs, listLaunches, listGroups, listProfiles, dismissLaunch, getClusterResources, getClusterInfo, listClusters, getGlobalSettings } from '../api/client.js'
 import { recordMetrics } from '../composables/useMetricsHistory.js'
 
 export const useVmStore = defineStore('vms', {
@@ -26,6 +26,7 @@ export const useVmStore = defineStore('vms', {
     activeContext: '',     // name of the active context
     inClusterMode: false,  // true when server is running in-cluster (disables kind ops)
     kindAvailable: false,  // true when `kind` is on PATH on the server
+    globalSettings: { kind: { preload_images: false } },
     // OS filter for the sidebar list. "all" | "linux" | "windows".
     // Empty/missing OS is treated as Linux — older VMs predate the label.
     osFilter: 'all',
@@ -149,9 +150,14 @@ export const useVmStore = defineStore('vms', {
         this.activeContext = data.active || ''
         this.inClusterMode = !!data.in_cluster
         this.kindAvailable = !!data.kind_available
+        await this.fetchGlobalSettings()
       } catch {
         // Non-critical — keep whatever we had
       }
+    },
+
+    async fetchGlobalSettings() {
+      this.globalSettings = await getGlobalSettings().catch(() => this.globalSettings)
     },
 
     // Called after select/create/delete. Clears cluster-scoped state and

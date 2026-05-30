@@ -409,7 +409,7 @@ func uniqueStrings(values []string) []string {
 
 func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kindClusterName string, images []string, enabled bool) error {
 	if !enabled && strings.TrimSpace(os.Getenv("KUBEGO_KIND_PRELOAD_IMAGES")) == "" {
-		streamLine(w, flusher, "  skipping local image preload (set KUBEGO_KIND_PRELOAD_IMAGES=1 to enable)")
+		streamLine(w, flusher, "  skipping local image preload")
 		return nil
 	}
 	if _, err := exec.LookPath("docker"); err != nil {

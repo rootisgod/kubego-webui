@@ -74,6 +74,8 @@ export const getClusterInfo = () => request('GET', '/cluster/info')
 export const applyManifest = (manifest) => request('POST', '/manifests/apply', { manifest })
 export const getVMDefaults = () => request('GET', '/config/vm-defaults')
 export const updateVMDefaults = (defaults) => request('PUT', '/config/vm-defaults', defaults)
+export const getGlobalSettings = () => request('GET', '/config/global')
+export const updateGlobalSettings = (settings) => request('PUT', '/config/global', settings)
 
 // Config export/import
 export async function exportConfig() {

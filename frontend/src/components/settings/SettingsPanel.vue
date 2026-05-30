@@ -20,12 +20,14 @@ const playbooksDir = ref('')
 const ansibleInstalled = ref(false)
 const ansibleVersion = ref('')
 const detectedSSHKey = ref('')
+const kindPreloadImages = ref(false)
 
 onMounted(async () => {
   try {
-    const [defaults, status] = await Promise.all([
+    const [defaults, status, global] = await Promise.all([
       api.getVMDefaults(),
       api.getAnsibleStatus(),
+      api.getGlobalSettings(),
     ])
     cpus.value = defaults.cpus
     memoryMB.value = defaults.memory_mb
@@ -36,6 +38,7 @@ onMounted(async () => {
     ansibleInstalled.value = status.installed
     ansibleVersion.value = status.version || ''
     detectedSSHKey.value = status.ssh_key_path || ''
+    kindPreloadImages.value = !!global.kind?.preload_images
   } catch (e) {
     toasts.error('Failed to load settings')
   } finally {
@@ -72,9 +75,10 @@ async function handleImportFile(event) {
     const result = await api.importConfig(bundle)
     toasts.success(`${result.message} (${result.templates_written} templates, ${result.playbooks_written} playbooks)`)
     // Reload settings to reflect imported values
-    const [defaults, status] = await Promise.all([
+    const [defaults, status, global] = await Promise.all([
       api.getVMDefaults(),
       api.getAnsibleStatus(),
+      api.getGlobalSettings(),
     ])
     cpus.value = defaults.cpus
     memoryMB.value = defaults.memory_mb
@@ -82,6 +86,7 @@ async function handleImportFile(event) {
     sshPublicKey.value = defaults.ssh_public_key || ''
     sshPrivateKey.value = defaults.ssh_private_key || ''
     playbooksDir.value = status.playbooks_dir || ''
+    kindPreloadImages.value = !!global.kind?.preload_images
   } catch (e) {
     toasts.error(e.message)
   } finally {
@@ -105,7 +110,10 @@ async function save() {
     diskGB.value = updated.disk_gb
     sshPublicKey.value = updated.ssh_public_key || ''
     sshPrivateKey.value = updated.ssh_private_key || ''
-    toasts.success('VM defaults saved')
+    await api.updateGlobalSettings({
+      kind: { preload_images: kindPreloadImages.value },
+    })
+    toasts.success('Settings saved')
   } catch (e) {
     toasts.error(e.message)
   } finally {
@@ -204,6 +212,17 @@ async function save() {
             class="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
+      </div>
+
+      <h3 class="text-sm font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-4">KinD</h3>
+      <div class="max-w-2xl mb-6 bg-[var(--bg-surface)] rounded-lg border border-[var(--border)] p-3">
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="kindPreloadImages" type="checkbox" class="rounded border-[var(--border)]" />
+          Preload KubeVirt/CDI images by default
+        </label>
+        <p class="mt-2 text-xs text-[var(--muted)]">
+          Applies to new KinD clusters only. Leave disabled on hosts where Docker image import reports missing content digests.
+        </p>
       </div>
 
       <ActionButton label="Save" :icon="Save" variant="success" :disabled="saving" @click="save" />

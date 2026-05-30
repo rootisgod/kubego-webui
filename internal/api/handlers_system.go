@@ -113,6 +113,33 @@ func (s *Server) handleUpdateVMDefaults(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, s.cfg.VMDefaults)
 }
 
+type globalSettingsResponse struct {
+	Kind config.KindConfig `json:"kind"`
+}
+
+func (s *Server) handleGetGlobalSettings(w http.ResponseWriter, r *http.Request) {
+	kind := config.KindConfig{}
+	if s.cfg.Kind != nil {
+		kind = *s.cfg.Kind
+	}
+	writeJSON(w, http.StatusOK, globalSettingsResponse{Kind: kind})
+}
+
+func (s *Server) handleUpdateGlobalSettings(w http.ResponseWriter, r *http.Request) {
+	var req globalSettingsResponse
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	s.cfg.Kind = &config.KindConfig{PreloadImages: req.Kind.PreloadImages}
+	if err := s.cfg.Save(s.configPath); err != nil {
+		s.logger.Error("failed to save config", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to save configuration")
+		return
+	}
+	writeJSON(w, http.StatusOK, globalSettingsResponse{Kind: *s.cfg.Kind})
+}
+
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	hostname, _ := os.Hostname()
 	now := time.Now()

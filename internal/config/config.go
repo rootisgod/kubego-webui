@@ -22,11 +22,15 @@ type LLMConfig struct {
 }
 
 type VMDefaults struct {
-	CPUs           int    `json:"cpus"`
-	MemoryMB       int    `json:"memory_mb"`
-	DiskGB         int    `json:"disk_gb"`
-	SSHPublicKey   string `json:"ssh_public_key,omitempty"`
-	SSHPrivateKey  string `json:"ssh_private_key,omitempty"`
+	CPUs          int    `json:"cpus"`
+	MemoryMB      int    `json:"memory_mb"`
+	DiskGB        int    `json:"disk_gb"`
+	SSHPublicKey  string `json:"ssh_public_key,omitempty"`
+	SSHPrivateKey string `json:"ssh_private_key,omitempty"`
+}
+
+type KindConfig struct {
+	PreloadImages bool `json:"preload_images"`
 }
 
 type Profile struct {
@@ -181,22 +185,23 @@ type ClusterMeta struct {
 }
 
 type Config struct {
-	Listen           string                 `json:"listen"`
-	CloudInitDir     string                 `json:"cloud_init_dir"`
-	CloudInitRepo    string                 `json:"cloud_init_repo"`
-	Username         string                 `json:"username"`
-	Password         string                 `json:"password"`
-	TrustProxy       bool                   `json:"trust_proxy,omitempty"`
-	Groups           []string               `json:"groups,omitempty"`
-	VMGroups         map[string]string      `json:"vm_groups,omitempty"`
-	LLM              *LLMConfig             `json:"llm,omitempty"`
-	VMDefaults       *VMDefaults            `json:"vm_defaults,omitempty"`
-	PlaybooksDir     string                 `json:"playbooks_dir,omitempty"`
-	Profiles         []Profile              `json:"profiles,omitempty"`
-	Schedules        []Schedule             `json:"schedules,omitempty"`
-	APITokens        []APIToken             `json:"api_tokens,omitempty"`
-	Webhooks         []Webhook              `json:"webhooks,omitempty"`
-	ClusterMetadata  map[string]ClusterMeta `json:"cluster_metadata,omitempty"`
+	Listen          string                 `json:"listen"`
+	CloudInitDir    string                 `json:"cloud_init_dir"`
+	CloudInitRepo   string                 `json:"cloud_init_repo"`
+	Username        string                 `json:"username"`
+	Password        string                 `json:"password"`
+	TrustProxy      bool                   `json:"trust_proxy,omitempty"`
+	Groups          []string               `json:"groups,omitempty"`
+	VMGroups        map[string]string      `json:"vm_groups,omitempty"`
+	LLM             *LLMConfig             `json:"llm,omitempty"`
+	VMDefaults      *VMDefaults            `json:"vm_defaults,omitempty"`
+	Kind            *KindConfig            `json:"kind,omitempty"`
+	PlaybooksDir    string                 `json:"playbooks_dir,omitempty"`
+	Profiles        []Profile              `json:"profiles,omitempty"`
+	Schedules       []Schedule             `json:"schedules,omitempty"`
+	APITokens       []APIToken             `json:"api_tokens,omitempty"`
+	Webhooks        []Webhook              `json:"webhooks,omitempty"`
+	ClusterMetadata map[string]ClusterMeta `json:"cluster_metadata,omitempty"`
 }
 
 func (c *Config) GetProfiles() []Profile {
@@ -423,6 +428,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.VMDefaults == nil {
 		cfg.VMDefaults = &VMDefaults{CPUs: 2, MemoryMB: 2048, DiskGB: 16}
+	}
+	if cfg.Kind == nil {
+		cfg.Kind = &KindConfig{}
 	}
 	// Enforce minimums. Fallbacks match the "Medium" size preset in
 	// the Launch VM modal so the default VM lands with comfortable

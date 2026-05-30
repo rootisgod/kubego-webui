@@ -37,7 +37,8 @@ async function switchTo(ctx) {
   }
 }
 
-function askCreateKind() {
+async function askCreateKind() {
+  await store.fetchGlobalSettings()
   createPrompt.value = true
 }
 
@@ -183,6 +184,7 @@ async function saveEdit({ tag, color }) {
 
     <KindCreateModal
       v-if="createPrompt"
+      :preload-images-default="!!store.globalSettings.kind?.preload_images"
       @confirm="doCreateKind"
       @cancel="createPrompt = false"
     />

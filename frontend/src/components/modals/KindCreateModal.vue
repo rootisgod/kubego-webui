@@ -3,12 +3,15 @@ import { ref, onMounted, computed, watch } from 'vue'
 import * as api from '../../api/client.js'
 
 const emit = defineEmits(['confirm', 'cancel'])
+const props = defineProps({
+  preloadImagesDefault: { type: Boolean, default: false },
+})
 const name = ref('')
 const inputRef = ref(null)
 const ingress = ref(false)
 const ingressHttp = ref(80)
 const ingressHttps = ref(443)
-const preloadImages = ref(false)
+const preloadImages = ref(props.preloadImagesDefault)
 const checkingPorts = ref(false)
 const portStatus = ref([])
 const portError = ref('')
