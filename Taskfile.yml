@@ -226,6 +226,14 @@ tasks:
       - systemctl restart kubego
       - echo "kubego service restarted"
 
+  service-deploy:
+    desc: Build kubego, install the binary, and restart the systemd service (run with sudo)
+    cmds:
+      - task: build
+      - task: install-binary
+      - systemctl restart kubego
+      - echo "kubego built, installed, and restarted"
+
   service-status:
     desc: Show kubego service status
     cmds:
