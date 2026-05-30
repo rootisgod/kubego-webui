@@ -407,6 +407,10 @@ func uniqueStrings(values []string) []string {
 }
 
 func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kindClusterName string, images []string) error {
+	if strings.TrimSpace(os.Getenv("KUBEGO_KIND_PRELOAD_IMAGES")) == "" {
+		streamLine(w, flusher, "  skipping local image preload (set KUBEGO_KIND_PRELOAD_IMAGES=1 to enable)")
+		return nil
+	}
 	if _, err := exec.LookPath("docker"); err != nil {
 		streamLine(w, flusher, "  warning: docker CLI not found; skipping local image cache preload")
 		return nil
