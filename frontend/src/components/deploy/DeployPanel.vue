@@ -4,7 +4,7 @@ import YAML from 'js-yaml'
 import * as api from '../../api/client.js'
 import { useToastStore } from '../../stores/toastStore.js'
 import { useVmStore } from '../../stores/vmStore.js'
-import { Rocket, Wand2, FileCode, Loader2, CheckCircle2, Copy, Search, Download, AlertTriangle } from 'lucide-vue-next'
+import { Rocket, Wand2, FileCode, Loader2, CheckCircle2, Copy, Search, Download, AlertTriangle, Info } from 'lucide-vue-next'
 
 const toasts = useToastStore()
 const store = useVmStore()
@@ -278,6 +278,18 @@ async function copyYaml() {
             <input v-model="preloadBeforeApply" type="checkbox" class="rounded border-[var(--border)]" />
             Preload images before apply
           </label>
+          <span class="relative inline-flex group">
+            <button
+              type="button"
+              class="p-1 rounded text-[var(--muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              aria-label="What preload images before apply means"
+            >
+              <Info class="w-4 h-4" />
+            </button>
+            <span class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-72 -translate-x-1/2 rounded border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)] shadow-lg group-hover:block group-focus-within:block">
+              Scans the YAML for image refs, uses matching images already cached in local Docker to avoid cluster downloads, and pulls missing images locally before importing them into KinD.
+            </span>
+          </span>
           <span v-if="yamlError" class="text-sm text-[var(--danger)]">{{ yamlError }}</span>
           <span v-if="scannedImages.length && !store.activeContext?.startsWith('kind-')" class="inline-flex items-center gap-1 text-sm text-[var(--warning)]">
             <AlertTriangle class="w-4 h-4" /> Preload is only available for active KinD clusters.
