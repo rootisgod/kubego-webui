@@ -12,17 +12,31 @@ const checkingPorts = ref(false)
 const portStatus = ref([])
 const portError = ref('')
 let checkSeq = 0
+const alternateHttp = 8080
+const alternateHttps = 8443
 
 // Mirrors kindNameRe in handlers_clusters.go. Keep these in sync —
 // a mismatch just shifts where the validation error is rendered.
 const valid = computed(() => /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(name.value))
+const selectedPorts = computed(() => [Number(ingressHttp.value), Number(ingressHttps.value)])
+const selectedPortStatuses = computed(() => {
+  const selected = new Set(selectedPorts.value)
+  return portStatus.value.filter(p => selected.has(p.port))
+})
+const unavailablePorts = computed(() => selectedPortStatuses.value.filter(p => !p.available).map(p => p.port))
+const alternatePortsAvailable = computed(() => {
+  const http = portStatus.value.find(p => p.port === alternateHttp)
+  const https = portStatus.value.find(p => p.port === alternateHttps)
+  return !!http?.available && !!https?.available
+})
 const portsValid = computed(() => {
   if (!ingress.value) return true
   return validPort(ingressHttp.value) &&
     validPort(ingressHttps.value) &&
     Number(ingressHttp.value) !== Number(ingressHttps.value) &&
     !portError.value &&
-    portStatus.value.every(p => p.available)
+    selectedPortStatuses.value.length === 2 &&
+    selectedPortStatuses.value.every(p => p.available)
 })
 const canSubmit = computed(() => valid.value && portsValid.value && !checkingPorts.value)
 
@@ -47,6 +61,11 @@ function submit() {
   })
 }
 
+function applyAlternatePorts() {
+  ingressHttp.value = alternateHttp
+  ingressHttps.value = alternateHttps
+}
+
 async function checkPorts() {
   portError.value = ''
   portStatus.value = []
@@ -62,8 +81,15 @@ async function checkPorts() {
   const seq = ++checkSeq
   checkingPorts.value = true
   try {
-    const res = await api.checkHostPorts([Number(ingressHttp.value), Number(ingressHttps.value)])
-    if (seq === checkSeq) portStatus.value = res.ports || []
+    const ports = [...new Set([...selectedPorts.value, alternateHttp, alternateHttps])]
+    const res = await api.checkHostPorts(ports)
+    if (seq === checkSeq) {
+      portStatus.value = res.ports || []
+      const unavailable = selectedPortStatuses.value.filter(p => !p.available).map(p => p.port)
+      if (unavailable.length) {
+        portError.value = `Port ${unavailable.join(' and ')} ${unavailable.length === 1 ? 'is' : 'are'} already in use. Enter different ingress host ports.`
+      }
+    }
   } catch (e) {
     if (seq === checkSeq) portError.value = e.message
   } finally {
@@ -136,6 +162,15 @@ onMounted(() => inputRef.value?.focus())
           </div>
           <p v-if="ingress && checkingPorts" class="mt-2 text-[11px] text-[var(--muted)]">Checking ports...</p>
           <p v-if="ingress && portError" class="mt-2 text-[11px] text-[var(--danger)]">{{ portError }}</p>
+          <div v-if="ingress && unavailablePorts.length" class="mt-3 flex items-center justify-between gap-3">
+            <p class="text-[11px] text-[var(--muted)]">Choose free host ports before creating the cluster.</p>
+            <button
+              v-if="alternatePortsAvailable"
+              type="button"
+              @click="applyAlternatePorts"
+              class="shrink-0 px-2.5 py-1.5 text-xs rounded bg-[var(--bg-hover)] hover:bg-[var(--border)] transition-colors"
+            >Use 8080/8443</button>
+          </div>
         </div>
 
         <div class="flex justify-end gap-3 mt-4">
