@@ -50,3 +50,28 @@ func TestDockerImageRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeImagePullRefs(t *testing.T) {
+	got, err := normalizeImagePullRefs(
+		[]string{"nginx:1.27", "busybox:1.36"},
+		"nginx:1.27, quay.io/example/app:v1\nredis:7",
+	)
+	if err != nil {
+		t.Fatalf("normalizeImagePullRefs returned error: %v", err)
+	}
+	want := []string{"nginx:1.27", "busybox:1.36", "quay.io/example/app:v1", "redis:7"}
+	if len(got) != len(want) {
+		t.Fatalf("normalizeImagePullRefs() = %#v; want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("normalizeImagePullRefs() = %#v; want %#v", got, want)
+		}
+	}
+}
+
+func TestNormalizeImagePullRefsRejectsWhitespace(t *testing.T) {
+	if _, err := normalizeImagePullRefs(nil, "nginx:1.27 bad ref:latest"); err == nil {
+		t.Fatal("expected whitespace error")
+	}
+}

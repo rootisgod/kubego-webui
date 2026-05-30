@@ -278,6 +278,8 @@ export const selectCluster = (context) => request('POST', '/clusters/select', { 
 export const setClusterMetadata = (context, meta) =>
   request('PUT', `/clusters/${encodeURIComponent(context)}/metadata`, meta)
 export const listKindImageCache = () => request('GET', '/clusters/kind/images')
+export const pullKindDockerImages = (images, onEvent) =>
+  streamClusterSSE('POST', '/clusters/kind/images/pull', { images }, onEvent)
 export const loadKindDockerImage = (image, onEvent) =>
   streamClusterSSE('POST', '/clusters/kind/images/load', { image }, onEvent)
 

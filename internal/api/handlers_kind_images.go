@@ -30,6 +30,11 @@ type kindImageLoadRequest struct {
 	Image string `json:"image"`
 }
 
+type kindImagePullRequest struct {
+	Images []string `json:"images"`
+	Text   string   `json:"text"`
+}
+
 func (s *Server) handleKindImageCache(w http.ResponseWriter, r *http.Request) {
 	clusterName, err := s.activeKindClusterName()
 	if err != nil {
@@ -99,6 +104,37 @@ func (s *Server) handleKindImageLoad(w http.ResponseWriter, r *http.Request) {
 	writeClusterSSE(w, flusher, clusterSSEEvent{Type: "done", Context: s.clusters.ActiveContext()})
 }
 
+func (s *Server) handleKindImagesPull(w http.ResponseWriter, r *http.Request) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		writeError(w, http.StatusPreconditionFailed, "docker CLI not found on PATH")
+		return
+	}
+	var req kindImagePullRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	images, err := normalizeImagePullRefs(req.Images, req.Text)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+	setSSEHeaders(w, flusher)
+	for _, image := range images {
+		streamPhase(w, flusher, "Pulling "+image)
+		if err := streamCommand(r.Context(), w, flusher, "docker", "pull", image); err != nil {
+			writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: fmt.Sprintf("pull %s: %v", image, err)})
+			return
+		}
+	}
+	writeClusterSSE(w, flusher, clusterSSEEvent{Type: "done", Context: s.clusters.ActiveContext()})
+}
+
 func (s *Server) activeKindClusterName() (string, error) {
 	if s.clusters.InCluster() {
 		return "", fmt.Errorf("kind image cache is disabled when running in-cluster")
@@ -108,6 +144,33 @@ func (s *Server) activeKindClusterName() (string, error) {
 		return "", fmt.Errorf("active context %q is not a KinD cluster", ctx)
 	}
 	return strings.TrimPrefix(ctx, "kind-"), nil
+}
+
+func normalizeImagePullRefs(images []string, text string) ([]string, error) {
+	values := append([]string{}, images...)
+	values = append(values, strings.FieldsFunc(text, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})...)
+	seen := map[string]bool{}
+	out := []string{}
+	for _, value := range values {
+		ref := strings.TrimSpace(value)
+		if ref == "" {
+			continue
+		}
+		if strings.ContainsAny(ref, " \t") {
+			return nil, fmt.Errorf("image reference %q contains whitespace", ref)
+		}
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		out = append(out, ref)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("at least one image is required")
+	}
+	return out, nil
 }
 
 func nodeHasAnyImageRef(refs map[string]bool, candidates []string) bool {

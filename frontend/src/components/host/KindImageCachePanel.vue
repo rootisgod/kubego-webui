@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RefreshCw, Loader2, Download, CheckCircle2, AlertTriangle, Search } from 'lucide-vue-next'
+import { RefreshCw, Loader2, Download, CheckCircle2, AlertTriangle, Search, Plus, X } from 'lucide-vue-next'
 import * as api from '../../api/client.js'
 import { useToastStore } from '../../stores/toastStore.js'
 
@@ -13,8 +13,12 @@ const data = ref(null)
 const progressLines = ref([])
 const selected = ref(new Set())
 const batch = ref(null)
+const showPullModal = ref(false)
+const pullText = ref('')
+const pullingImages = ref(false)
 
 const images = computed(() => data.value?.images || [])
+const pullRefs = computed(() => parseImageRefs(pullText.value))
 const filteredImages = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return images.value
@@ -120,6 +124,38 @@ function closeBatch() {
   if (batch.value && batch.value.done >= batch.value.total) batch.value = null
 }
 
+function parseImageRefs(value) {
+  const refs = []
+  const seen = new Set()
+  for (const part of String(value || '').split(/[,\n\r]+/)) {
+    const ref = part.trim()
+    if (!ref || seen.has(ref)) continue
+    seen.add(ref)
+    refs.push(ref)
+  }
+  return refs
+}
+
+async function pullImages() {
+  if (!pullRefs.value.length) return
+  pullingImages.value = true
+  progressLines.value = []
+  try {
+    await api.pullKindDockerImages(pullRefs.value, (ev) => {
+      if (ev.type === 'output') progressLines.value.push(ev.line)
+    })
+    toasts.success(`Pulled ${pullRefs.value.length} image${pullRefs.value.length !== 1 ? 's' : ''}`)
+    showPullModal.value = false
+    pullText.value = ''
+    await loadCache()
+  } catch (e) {
+    toasts.error(e.message)
+    progressLines.value.push(`ERROR: ${e.message}`)
+  } finally {
+    pullingImages.value = false
+  }
+}
+
 onMounted(loadCache)
 </script>
 
@@ -132,14 +168,24 @@ onMounted(loadCache)
           Load host Docker images into the active KinD cluster's container runtime.
         </p>
       </div>
-      <button
-        class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-[var(--bg-hover)] hover:bg-[var(--border)] transition-colors"
-        :disabled="loading"
-        @click="loadCache"
-      >
-        <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" />
-        Refresh
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-blue-600 transition-colors disabled:opacity-40"
+          :disabled="pullingImages || !!loadingImage"
+          @click="showPullModal = true"
+        >
+          <Plus class="w-3.5 h-3.5" />
+          Pull images
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-[var(--bg-hover)] hover:bg-[var(--border)] transition-colors"
+          :disabled="loading"
+          @click="loadCache"
+        >
+          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" />
+          Refresh
+        </button>
+      </div>
     </div>
 
     <div v-if="error" class="mb-4 px-4 py-3 rounded bg-red-900/20 border border-red-800/30 text-sm text-[var(--danger)]">
@@ -257,6 +303,46 @@ onMounted(loadCache)
     </template>
 
     <Teleport to="body">
+      <div v-if="showPullModal" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="!pullingImages && (showPullModal = false)" />
+        <div class="relative w-full max-w-xl mx-4 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h3 class="text-sm font-medium">Pull Docker Images</h3>
+              <p class="text-xs text-[var(--muted)] mt-1">Paste image references separated by new lines or commas.</p>
+            </div>
+            <button
+              class="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] disabled:opacity-40"
+              :disabled="pullingImages"
+              title="Close"
+              @click="showPullModal = false"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+
+          <textarea
+            v-model="pullText"
+            spellcheck="false"
+            class="font-mono text-xs leading-5 w-full min-h-44 rounded bg-[var(--bg-primary)] border border-[var(--border)] p-3 text-[var(--text-primary)] resize-none focus:border-[var(--accent)] focus:outline-none"
+            placeholder="nginx:1.27, redis:7&#10;quay.io/example/app:v1"
+          />
+
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="text-xs text-[var(--muted)]">{{ pullRefs.length }} image{{ pullRefs.length !== 1 ? 's' : '' }} detected</div>
+            <button
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-blue-600 transition-colors disabled:opacity-40"
+              :disabled="pullRefs.length === 0 || pullingImages"
+              @click="pullImages"
+            >
+              <Loader2 v-if="pullingImages" class="w-3.5 h-3.5 animate-spin" />
+              <Download v-else class="w-3.5 h-3.5" />
+              {{ pullingImages ? 'Pulling...' : 'Pull to Docker' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="batch" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" />
         <div class="relative w-full max-w-xl mx-4 rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] p-5 shadow-2xl">

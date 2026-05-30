@@ -177,6 +177,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/clusters/kind/{name}", s.handleKindDelete)
 	mux.HandleFunc("PUT /api/v1/clusters/{context}/metadata", s.handleSetClusterMetadata)
 	mux.HandleFunc("GET /api/v1/clusters/kind/images", s.handleKindImageCache)
+	mux.HandleFunc("POST /api/v1/clusters/kind/images/pull", s.handleKindImagesPull)
 	mux.HandleFunc("POST /api/v1/clusters/kind/images/load", s.handleKindImageLoad)
 
 	// Host machine check (external tools + kernel sysctls).
