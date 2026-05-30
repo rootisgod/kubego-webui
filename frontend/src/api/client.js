@@ -72,6 +72,7 @@ export async function getVMPodLogs(name, tail = 500) {
 export const getClusterResources = () => request('GET', '/cluster/resources')
 export const getClusterInfo = () => request('GET', '/cluster/info')
 export const applyManifest = (manifest) => request('POST', '/manifests/apply', { manifest })
+export const scanManifestImages = (manifest) => request('POST', '/manifests/images', { manifest })
 export const getVMDefaults = () => request('GET', '/config/vm-defaults')
 export const updateVMDefaults = (defaults) => request('PUT', '/config/vm-defaults', defaults)
 export const getGlobalSettings = () => request('GET', '/config/global')

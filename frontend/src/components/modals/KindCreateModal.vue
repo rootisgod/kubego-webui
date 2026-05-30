@@ -4,7 +4,7 @@ import * as api from '../../api/client.js'
 
 const emit = defineEmits(['confirm', 'cancel'])
 const props = defineProps({
-  preloadImagesDefault: { type: Boolean, default: false },
+  preloadImagesDefault: { type: Boolean, default: true },
 })
 const name = ref('')
 const inputRef = ref(null)

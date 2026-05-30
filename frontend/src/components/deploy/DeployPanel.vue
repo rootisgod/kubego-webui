@@ -4,14 +4,19 @@ import YAML from 'js-yaml'
 import * as api from '../../api/client.js'
 import { useToastStore } from '../../stores/toastStore.js'
 import { useVmStore } from '../../stores/vmStore.js'
-import { Rocket, Wand2, FileCode, Loader2, CheckCircle2, Copy } from 'lucide-vue-next'
+import { Rocket, Wand2, FileCode, Loader2, CheckCircle2, Copy, Search, Download, AlertTriangle } from 'lucide-vue-next'
 
 const toasts = useToastStore()
 const store = useVmStore()
 
 const mode = ref('form')
 const applying = ref(false)
+const scanningImages = ref(false)
+const preloadingImages = ref(false)
 const applied = ref([])
+const scannedImages = ref([])
+const imageProgressLines = ref([])
+const preloadBeforeApply = ref(true)
 const yamlError = ref('')
 const form = ref({
   name: 'web',
@@ -62,9 +67,15 @@ const quickYaml = computed(() => {
 
 const rawYaml = ref(quickYaml.value)
 const activeYaml = computed(() => mode.value === 'form' ? quickYaml.value : rawYaml.value)
+const canPreloadImages = computed(() => store.activeContext?.startsWith('kind-') && scannedImages.value.length > 0 && !preloadingImages.value && !applying.value)
 
 watch(mode, (next) => {
   if (next === 'yaml' && !rawYaml.value.trim()) rawYaml.value = quickYaml.value
+})
+
+watch(activeYaml, () => {
+  scannedImages.value = []
+  imageProgressLines.value = []
 })
 
 function metadata(name) {
@@ -100,6 +111,15 @@ async function apply() {
   applying.value = true
   applied.value = []
   try {
+    if (preloadBeforeApply.value && store.activeContext?.startsWith('kind-')) {
+      const images = await scanImagesFromManifest(false)
+      if (images.length) {
+        const failures = await preloadImageRefs(images)
+        if (failures.length) {
+          throw new Error('image preload failed; manifest was not applied')
+        }
+      }
+    }
     const res = await api.applyManifest(activeYaml.value)
     applied.value = res.resources || []
     toasts.success(`Applied ${applied.value.length} resource${applied.value.length !== 1 ? 's' : ''}`)
@@ -108,6 +128,64 @@ async function apply() {
     toasts.error(e.message)
   } finally {
     applying.value = false
+  }
+}
+
+async function scanImages() {
+  if (!validateYaml()) return
+  scanningImages.value = true
+  scannedImages.value = []
+  imageProgressLines.value = []
+  try {
+    const images = await scanImagesFromManifest(true)
+    if (images.length) {
+      toasts.success(`Found ${images.length} image${images.length !== 1 ? 's' : ''}`)
+    } else {
+      toasts.info('No container images found')
+    }
+  } catch (e) {
+    toasts.error(e.message)
+  } finally {
+    scanningImages.value = false
+  }
+}
+
+async function scanImagesFromManifest(clearProgress) {
+  if (clearProgress) imageProgressLines.value = []
+  const res = await api.scanManifestImages(activeYaml.value)
+  scannedImages.value = Array.isArray(res.images) ? res.images : []
+  return scannedImages.value
+}
+
+async function preloadImages() {
+  if (!scannedImages.value.length) return
+  const failures = await preloadImageRefs(scannedImages.value)
+  if (failures.length) {
+    toasts.error(`${failures.length} image preload${failures.length !== 1 ? 's' : ''} failed`)
+  } else {
+    toasts.success(`Preloaded ${scannedImages.value.length} image${scannedImages.value.length !== 1 ? 's' : ''}`)
+  }
+}
+
+async function preloadImageRefs(images) {
+  preloadingImages.value = true
+  imageProgressLines.value = []
+  const failures = []
+  try {
+    for (const image of scannedImages.value) {
+      imageProgressLines.value.push(`==> ${image}`)
+      try {
+        await api.loadKindDockerImage(image, (ev) => {
+          if (ev.type === 'output') imageProgressLines.value.push(ev.line)
+        })
+      } catch (e) {
+        failures.push(`${image}: ${e.message}`)
+        imageProgressLines.value.push(`ERROR: ${e.message}`)
+      }
+    }
+    return failures
+  } finally {
+    preloadingImages.value = false
   }
 }
 
@@ -186,12 +264,37 @@ async function copyYaml() {
             <Rocket v-else class="w-4 h-4" />
             {{ applying ? 'Applying...' : 'Apply YAML' }}
           </button>
+          <button :disabled="scanningImages || preloadingImages || applying" class="inline-flex items-center gap-2 px-3 py-2 rounded bg-[var(--bg-hover)] hover:bg-[var(--border)] text-sm disabled:opacity-60" @click="scanImages">
+            <Loader2 v-if="scanningImages" class="w-4 h-4 animate-spin" />
+            <Search v-else class="w-4 h-4" />
+            {{ scanningImages ? 'Scanning...' : 'Scan Images' }}
+          </button>
+          <button :disabled="!canPreloadImages" class="inline-flex items-center gap-2 px-3 py-2 rounded bg-[var(--accent)] text-white text-sm disabled:opacity-40" @click="preloadImages">
+            <Loader2 v-if="preloadingImages" class="w-4 h-4 animate-spin" />
+            <Download v-else class="w-4 h-4" />
+            {{ preloadingImages ? 'Preloading...' : `Preload Images (${scannedImages.length})` }}
+          </button>
+          <label class="inline-flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <input v-model="preloadBeforeApply" type="checkbox" class="rounded border-[var(--border)]" />
+            Preload images before apply
+          </label>
           <span v-if="yamlError" class="text-sm text-[var(--danger)]">{{ yamlError }}</span>
+          <span v-if="scannedImages.length && !store.activeContext?.startsWith('kind-')" class="inline-flex items-center gap-1 text-sm text-[var(--warning)]">
+            <AlertTriangle class="w-4 h-4" /> Preload is only available for active KinD clusters.
+          </span>
           <div v-if="applied.length" class="flex flex-wrap gap-2">
             <span v-for="r in applied" :key="`${r.kind}-${r.namespace}-${r.name}`" class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-[var(--success)]/15 text-[var(--success)]">
               <CheckCircle2 class="w-3 h-3" /> {{ r.action }} {{ r.kind }}/{{ r.name }}
             </span>
           </div>
+        </div>
+        <div v-if="scannedImages.length || imageProgressLines.length" class="border-t border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 space-y-3">
+          <div v-if="scannedImages.length" class="flex flex-wrap gap-2">
+            <span v-for="image in scannedImages" :key="image" class="font-mono text-[11px] px-2 py-1 rounded bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-secondary)]">
+              {{ image }}
+            </span>
+          </div>
+          <pre v-if="imageProgressLines.length" class="max-h-44 overflow-auto rounded border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs whitespace-pre-wrap text-[var(--text-secondary)]">{{ imageProgressLines.join('\n') }}</pre>
         </div>
       </section>
     </div>

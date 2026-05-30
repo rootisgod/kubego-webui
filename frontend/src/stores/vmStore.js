@@ -26,7 +26,7 @@ export const useVmStore = defineStore('vms', {
     activeContext: '',     // name of the active context
     inClusterMode: false,  // true when server is running in-cluster (disables kind ops)
     kindAvailable: false,  // true when `kind` is on PATH on the server
-    globalSettings: { kind: { preload_images: false } },
+    globalSettings: { kind: { preload_images: true } },
     // OS filter for the sidebar list. "all" | "linux" | "windows".
     // Empty/missing OS is treated as Linux — older VMs predate the label.
     osFilter: 'all',

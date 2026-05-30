@@ -85,10 +85,6 @@ func (s *Server) handleKindImageLoad(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "image is required")
 		return
 	}
-	if !dockerImageExists(r.Context(), image) {
-		writeError(w, http.StatusNotFound, "image not found in local Docker cache")
-		return
-	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
@@ -138,6 +134,12 @@ func imageReferenceCandidates(ref string) []string {
 }
 
 func loadDockerImageIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, clusterName, image string) error {
+	if !dockerImageExists(ctx, image) {
+		streamPhase(w, flusher, "Pulling "+image)
+		if err := streamCommand(ctx, w, flusher, "docker", "pull", image); err != nil {
+			return fmt.Errorf("pull %s: %w", image, err)
+		}
+	}
 	corrected, changed, err := correctDockerImageForKindNode(ctx, w, flusher, clusterName, image)
 	if err != nil {
 		streamLine(w, flusher, "  warning: image auto-correct skipped: "+err.Error())

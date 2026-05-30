@@ -221,7 +221,7 @@ async function save() {
           Preload KubeVirt/CDI images by default
         </label>
         <p class="mt-2 text-xs text-[var(--muted)]">
-          Applies to new KinD clusters only. Leave disabled on hosts where Docker image import reports missing content digests.
+          Applies to new KinD clusters only. KubeGo pulls the matching node-platform images locally before importing them.
         </p>
       </div>
 

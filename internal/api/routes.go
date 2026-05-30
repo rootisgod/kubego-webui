@@ -210,6 +210,7 @@ func (s *Server) Handler(staticFS http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/cluster/resources", s.handleClusterResources)
 	mux.HandleFunc("GET /api/v1/cluster/info", s.handleClusterInfo)
 	mux.HandleFunc("POST /api/v1/manifests/apply", s.rateLimited(s.handleApplyManifest))
+	mux.HandleFunc("POST /api/v1/manifests/images", s.handleScanManifestImages)
 	mux.HandleFunc("GET /api/v1/config/vm-defaults", s.handleGetVMDefaults)
 	mux.HandleFunc("PUT /api/v1/config/vm-defaults", s.handleUpdateVMDefaults)
 	mux.HandleFunc("GET /api/v1/config/global", s.handleGetGlobalSettings)

@@ -430,7 +430,7 @@ func Load(path string) (*Config, error) {
 		cfg.VMDefaults = &VMDefaults{CPUs: 2, MemoryMB: 2048, DiskGB: 16}
 	}
 	if cfg.Kind == nil {
-		cfg.Kind = &KindConfig{}
+		cfg.Kind = &KindConfig{PreloadImages: true}
 	}
 	// Enforce minimums. Fallbacks match the "Medium" size preset in
 	// the Launch VM modal so the default VM lands with comfortable
@@ -506,6 +506,7 @@ func CreateDefault(path string) (*Config, error) {
 		CloudInitDir: cloudInitDir,
 		Username:     "admin",
 		Password:     hashed,
+		Kind:         &KindConfig{PreloadImages: true},
 	}
 	if err := cfg.Save(path); err != nil {
 		return nil, err

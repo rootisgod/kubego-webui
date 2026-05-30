@@ -148,6 +148,9 @@ func TestLoad_FillsDefaults(t *testing.T) {
 	if c.Groups == nil {
 		t.Error("Groups should default to empty slice, not nil")
 	}
+	if c.Kind == nil || !c.Kind.PreloadImages {
+		t.Error("Kind.PreloadImages should default to true")
+	}
 }
 
 func TestLoad_MalformedJSON(t *testing.T) {
@@ -420,6 +423,9 @@ func TestCreateDefault(t *testing.T) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(cfg.Password), []byte("admin")); err != nil {
 		t.Errorf("default password doesn't verify: %v", err)
+	}
+	if cfg.Kind == nil || !cfg.Kind.PreloadImages {
+		t.Error("Kind.PreloadImages should default to true")
 	}
 
 	// The file should exist on disk.
