@@ -559,12 +559,35 @@ func validateHostPort(port int) error {
 }
 
 func hostPortAvailable(port int) bool {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if dockerHostPortInUse(port) {
+		return false
+	}
+	ln, err := net.Listen("tcp4", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		return false
 	}
 	_ = ln.Close()
 	return true
+}
+
+func dockerHostPortInUse(port int) bool {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Ports}}").Output()
+	if err != nil {
+		return false
+	}
+	needle4 := fmt.Sprintf("0.0.0.0:%d->", port)
+	needle6 := fmt.Sprintf("[::]:%d->", port)
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, needle4) || strings.Contains(line, needle6) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveKubeVirtVersion honours $KUBEVIRT_VERSION for parity with
