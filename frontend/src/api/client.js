@@ -276,6 +276,9 @@ export const listClusters = () => request('GET', '/clusters')
 export const selectCluster = (context) => request('POST', '/clusters/select', { context })
 export const setClusterMetadata = (context, meta) =>
   request('PUT', `/clusters/${encodeURIComponent(context)}/metadata`, meta)
+export const listKindImageCache = () => request('GET', '/clusters/kind/images')
+export const loadKindDockerImage = (image, onEvent) =>
+  streamClusterSSE('POST', '/clusters/kind/images/load', { image }, onEvent)
 
 // Host machine check (external tools + kernel sysctls)
 export const hostCheck = () => request('GET', '/host/check')

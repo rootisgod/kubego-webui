@@ -11,6 +11,7 @@ import TreeSidebar from './components/layout/TreeSidebar.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import HostPanel from './components/host/HostPanel.vue'
 import MachineCheckPanel from './components/host/MachineCheckPanel.vue'
+import KindImageCachePanel from './components/host/KindImageCachePanel.vue'
 import K9sPanel from './components/k9s/K9sPanel.vue'
 import VmDetailPanel from './components/vm/VmDetailPanel.vue'
 import CloudInitPanel from './components/cloudinit/CloudInitPanel.vue'
@@ -90,6 +91,7 @@ usePolling(() => {
           <ApiTokensPanel v-else-if="store.selectedNode === '__api-tokens__'" />
           <EventLogPanel v-else-if="store.selectedNode === '__events__'" />
           <MachineCheckPanel v-else-if="store.selectedNode === '__machine-check__'" />
+          <KindImageCachePanel v-else-if="store.selectedNode === '__kind-image-cache__'" />
           <!-- K9s branch renders nothing here; the panel itself is
                always-mounted below (see v-show) so its PTYs survive. -->
           <template v-else-if="store.selectedNode === '__k9s__'" />

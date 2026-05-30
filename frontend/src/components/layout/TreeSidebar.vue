@@ -9,7 +9,7 @@ import CloneVmModal from '../modals/CloneVmModal.vue'
 import GroupNameModal from '../modals/GroupNameModal.vue'
 import MoveToGroupModal from '../modals/MoveToGroupModal.vue'
 import ClusterSwitcher from './ClusterSwitcher.vue'
-import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle, Wrench, Compass, Disc, Terminal as TerminalIcon, MonitorSmartphone, Rocket } from 'lucide-vue-next'
+import { Monitor, ChevronDown, ChevronRight, FileCode, Settings, Loader2, Play, Square, Copy, Trash2, CheckSquare, Folder, FolderOpen, FolderPlus, Pencil, ArrowRight, Plus, Layers, TerminalSquare, Clock, KeyRound, ScrollText, Bell, Box, Zap, AlertTriangle, Wrench, Compass, Disc, Terminal as TerminalIcon, MonitorSmartphone, Rocket, PackageOpen } from 'lucide-vue-next'
 import { ref, computed, markRaw } from 'vue'
 
 const store = useVmStore()
@@ -38,6 +38,7 @@ const allSelected = computed(() => store.visibleVms.length > 0 && store.visibleV
 const clusterToolItems = [
   { id: '__deploy__', label: 'Deploy', icon: markRaw(Rocket) },
   { id: '__images__', label: 'Images', icon: markRaw(Disc) },
+  { id: '__kind-image-cache__', label: 'Image Cache', icon: markRaw(PackageOpen) },
   { id: '__schedules__', label: 'Schedules', icon: markRaw(Clock) },
 ]
 const sharedItemItems = [
