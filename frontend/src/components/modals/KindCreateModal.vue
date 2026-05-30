@@ -8,6 +8,7 @@ const inputRef = ref(null)
 const ingress = ref(false)
 const ingressHttp = ref(80)
 const ingressHttps = ref(443)
+const preloadImages = ref(false)
 const checkingPorts = ref(false)
 const portStatus = ref([])
 const portError = ref('')
@@ -58,6 +59,7 @@ function submit() {
     ingress: ingress.value,
     ingress_http: Number(ingressHttp.value),
     ingress_https: Number(ingressHttps.value),
+    preload_images: preloadImages.value,
   })
 }
 
@@ -171,6 +173,16 @@ onMounted(() => inputRef.value?.focus())
               class="shrink-0 px-2.5 py-1.5 text-xs rounded bg-[var(--bg-hover)] hover:bg-[var(--border)] transition-colors"
             >Use 8080/8443</button>
           </div>
+        </div>
+
+        <div class="mt-3 rounded border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+          <label class="flex items-center gap-2 text-sm">
+            <input v-model="preloadImages" type="checkbox" class="rounded border-[var(--border)]" />
+            Preload KubeVirt/CDI images into KinD
+          </label>
+          <p class="mt-2 text-[11px] text-[var(--muted)]">
+            Optional cache step. Leave off when Docker image import reports missing content digests.
+          </p>
         </div>
 
         <div class="flex justify-end gap-3 mt-4">

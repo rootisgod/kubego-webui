@@ -134,10 +134,11 @@ type clusterSSEEvent struct {
 }
 
 type kindCreateRequest struct {
-	Name         string `json:"name"`
-	Ingress      bool   `json:"ingress"`
-	IngressHTTP  int    `json:"ingress_http"`
-	IngressHTTPS int    `json:"ingress_https"`
+	Name          string `json:"name"`
+	Ingress       bool   `json:"ingress"`
+	IngressHTTP   int    `json:"ingress_http"`
+	IngressHTTPS  int    `json:"ingress_https"`
+	PreloadImages bool   `json:"preload_images"`
 }
 
 func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +236,7 @@ func (s *Server) handleKindCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2..N: install KubeVirt + CDI into the new context. Skip the
 	// useEmulation patch when /dev/kvm is present in the node.
-	if err := s.installKubeVirtIntoKind(r.Context(), w, flusher, contextName, req.Name, !kvmPassthrough); err != nil {
+	if err := s.installKubeVirtIntoKind(r.Context(), w, flusher, contextName, req.Name, !kvmPassthrough, req.PreloadImages); err != nil {
 		writeClusterSSE(w, flusher, clusterSSEEvent{Type: "error", Error: err.Error()})
 		return
 	}
@@ -301,7 +302,7 @@ func (s *Server) handleKindDelete(w http.ResponseWriter, r *http.Request) {
 // KubeVirt, optional useEmulation patch (only when the node lacks
 // /dev/kvm), operator + CR for CDI, then waits for both to reach
 // Available. Streams every subcommand's output as SSE output events.
-func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kctx, kindClusterName string, useEmulation bool) error {
+func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kctx, kindClusterName string, useEmulation, preloadImages bool) error {
 	streamPhase(w, flusher, "Resolving KubeVirt + CDI release versions")
 	kvVer, err := resolveKubeVirtVersion(ctx)
 	if err != nil {
@@ -314,7 +315,7 @@ func (s *Server) installKubeVirtIntoKind(ctx context.Context, w http.ResponseWri
 	}
 	streamLine(w, flusher, "  CDI "+cdiVer)
 
-	if err := preloadKindInstallImages(ctx, w, flusher, kindClusterName, installImages(kvVer, cdiVer)); err != nil {
+	if err := preloadKindInstallImages(ctx, w, flusher, kindClusterName, installImages(kvVer, cdiVer), preloadImages); err != nil {
 		return err
 	}
 
@@ -406,8 +407,8 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kindClusterName string, images []string) error {
-	if strings.TrimSpace(os.Getenv("KUBEGO_KIND_PRELOAD_IMAGES")) == "" {
+func preloadKindInstallImages(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, kindClusterName string, images []string, enabled bool) error {
+	if !enabled && strings.TrimSpace(os.Getenv("KUBEGO_KIND_PRELOAD_IMAGES")) == "" {
 		streamLine(w, flusher, "  skipping local image preload (set KUBEGO_KIND_PRELOAD_IMAGES=1 to enable)")
 		return nil
 	}
